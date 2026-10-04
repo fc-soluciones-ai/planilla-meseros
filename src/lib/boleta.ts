@@ -1,6 +1,6 @@
 // Boleta de pago como imagen, para compartir por WhatsApp desde el menú del celular (solo navegador).
 
-export type SlipRow = { day: string; note?: string; salary: number; tip: number };
+export type SlipRow = { day: string; note?: string; off?: boolean; salary: number; tip: number };
 export type SlipData = {
   restaurant: string;
   name: string;
@@ -83,10 +83,14 @@ export async function slipImage(d: SlipData): Promise<File> {
   y += 18; line(y);
   for (const r of d.rows) {
     y += ROW;
-    text(r.day, P, y - 22, `600 28px ${f.body}`, C.ink);
-    if (r.note) text(r.note, P + g.measureText(r.day).width + 14, y - 22, `500 20px ${f.body}`, C.muted);
-    text(money(r.salary), xSal, y - 22, `500 27px ${f.mono}`, C.ink, "right");
-    text(money(r.tip), xTip, y - 22, `500 27px ${f.mono}`, C.ink, "right");
+    text(r.day, P, y - 22, `600 28px ${f.body}`, r.off ? C.muted : C.ink);
+    if (r.off) {
+      text("Libre", xTip, y - 22, `italic 500 26px ${f.body}`, C.muted, "right");
+    } else {
+      if (r.note) text(r.note, P + g.measureText(r.day).width + 14, y - 22, `500 20px ${f.body}`, C.muted);
+      text(money(r.salary), xSal, y - 22, `500 27px ${f.mono}`, C.ink, "right");
+      text(money(r.tip), xTip, y - 22, `500 27px ${f.mono}`, C.ink, "right");
+    }
     line(y);
   }
   y += ROW;

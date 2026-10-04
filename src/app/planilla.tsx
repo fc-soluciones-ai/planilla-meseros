@@ -46,15 +46,17 @@ function slipData(p: Staff, r: PersonCalc, dates: string[], sched: Record<number
     restaurant: restaurant || "Planilla de meseros",
     name: p.name,
     week: `Semana del ${shortDate(dates[0])} al ${shortDate(dates[6])} ${dates[6].slice(0, 4)}`,
-    rows: r.days
-      .map((d, i) => ({ ...d, i, c: sched[p.id][i] }))
-      .filter((d) => d.c.s !== "off" || d.tip > 0)
-      .map((d) => ({
-        day: `${DAYS[d.i]} ${dates[d.i].slice(8).replace(/^0/, "")}`,
-        note: d.c.s === "from" ? `desde ${d.c.t}` : undefined,
+    // Todos los días de la semana; los que no trabajó dicen "Libre"
+    rows: r.days.map((d, i) => {
+      const c = sched[p.id][i];
+      return {
+        day: `${DAYS[i]} ${dates[i].slice(8).replace(/^0/, "")}`,
+        note: c.s === "from" ? `desde ${c.t}` : undefined,
+        off: c.s === "off" && d.salary === 0 && d.tip === 0,
         salary: d.salary,
         tip: d.tip,
-      })),
+      };
+    }),
     salary: r.salary,
     tip: r.tip,
     total: r.total,
@@ -580,7 +582,7 @@ function SlipSheet({ id, dates, staff, sched, tickets, settings, restaurant, onN
     `*Planilla ${p.name}*`,
     data.week,
     "",
-    ...data.rows.map((d) => `${d.day}: salario ${money(d.salary)} + propina ${money(d.tip)}`),
+    ...data.rows.map((d) => (d.off ? `${d.day}: Libre` : `${d.day}: salario ${money(d.salary)} + propina ${money(d.tip)}`)),
     "",
     `Salario: ${money(r.salary)}`,
     `Propinas: ${money(r.tip)}`,
