@@ -185,3 +185,10 @@ label.gcell:focus-within { outline: 2px solid var(--accent); outline-offset: 2px
 .login-logo { display: block; width: 200px; height: auto; margin: 0 auto 18px }
 .app.login h1 { text-align: center }
 .app.login > .hint { text-align: center }
+
+/* vista previa de boletas */
+.slipnav { text-align: center }
+.slipview { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 8px; display: grid; place-items: center; min-height: 260px }
+.slipview img { width: 100%; max-width: 420px; height: auto; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12) }
+.slipwait { color: var(--muted); font-size: 14px }
+.iconbtn:disabled { opacity: .4 }

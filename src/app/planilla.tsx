@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import InstallButton from "./install-button";
 import { calcWeek, weekWarnings, type PersonCalc, type Ticket } from "@/lib/reparto";
 import { shareFiles, slipImage, type SlipData } from "@/lib/boleta";
@@ -195,13 +195,12 @@ export default function Planilla(props: Props) {
         />
       )}
 
-      {sheet?.kind === "slip" && (() => {
-        const p = staff.find((x) => x.id === sheet.id);
-        if (!p) return null;
-        return <SlipSheet person={p} monday={monday} dates={dates} staff={staff} sched={sched}
+      {sheet?.kind === "slip" && (
+        <SlipSheet id={sheet.id} dates={dates} staff={staff} sched={sched}
           tickets={props.tickets} settings={settings} restaurant={settings.restaurant || props.settings.restaurant}
-          onClose={() => setSheet(null)} />;
-      })()}
+          onNav={(id) => setSheet({ kind: "slip", id })}
+          onClose={() => setSheet(null)} />
+      )}
 
       {toast && (
         <div className={`toast${toast.err ? " err" : ""}`} role="status">
@@ -586,6 +585,7 @@ function TipsTab({ restaurant, dates, staff, sched, tickets, settings, onSlip }:
             </tbody>
           </table></div>
           {rounding !== 0 && <p className="note">Diferencia por redondear al colón: {money(rounding)}.</p>}
+          <button className="primary" onClick={() => onSlip(paid[0].id)}>Ver boletas una por una</button>
           <button className="secondary" disabled={sharing} onClick={async () => {
             setSharing(true); setShareMsg(null);
             try {
@@ -605,19 +605,48 @@ function TipsTab({ restaurant, dates, staff, sched, tickets, settings, onSlip }:
   );
 }
 
-function SlipSheet({ person: p, monday, dates, staff, sched, tickets, settings, restaurant, onClose }: {
-  person: Staff; monday: string; dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>;
-  tickets: Ticket[]; settings: Settings; restaurant: string; onClose: () => void;
+/**
+ * Vista previa de las boletas tal como se envían. Con las flechas se pasa de una persona a otra
+ * y cada una se comparte por separado.
+ */
+function SlipSheet({ id, dates, staff, sched, tickets, settings, restaurant, onNav, onClose }: {
+  id: number; dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>;
+  tickets: Ticket[]; settings: Settings; restaurant: string;
+  onNav: (id: number) => void; onClose: () => void;
 }) {
-  const r = calcWeek(dates, staff, sched, tickets, settings.cutoff).people.find((x) => x.id === p.id)!;
+  const paid = calcWeek(dates, staff, sched, tickets, settings.cutoff).people.filter((x) => x.total > 0);
+  const idx = Math.max(0, paid.findIndex((x) => x.id === id));
+  const r = paid[idx];
+  const p = staff.find((x) => x.id === r?.id);
+  const [preview, setPreview] = useState<{ id: number; file: File; url: string } | null>(null);
   const [sharing, setSharing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  const worked = r.days.map((d, i) => ({ ...d, i })).filter((d) => sched[p.id][d.i].s !== "off" || d.tip > 0);
+  const data = p && r ? slipData(p, r, dates, sched, restaurant) : null;
+  const key = data ? JSON.stringify(data) : "";
+
+  // Genera la imagen de la boleta que se está viendo
+  useEffect(() => {
+    if (!data || !p) return;
+    let alive = true;
+    let url = "";
+    slipImage(data).then((file) => {
+      if (!alive) return;
+      url = URL.createObjectURL(file);
+      setPreview({ id: p.id, file, url });
+    }).catch(() => alive && setNote("No se pudo generar la boleta."));
+    return () => { alive = false; if (url) URL.revokeObjectURL(url); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- se regenera cuando cambian los datos de la boleta
+  }, [key]);
+
+  if (!p || !r || !data) return null;
+  const ready = preview?.id === p.id ? preview : null;
+  const go = (d: number) => { setNote(null); onNav(paid[(idx + d + paid.length) % paid.length].id); };
+
   const text = [
     `*Planilla ${p.name}*`,
-    `Semana ${shortDate(dates[0])} al ${shortDate(dates[6])}`,
+    data.week,
     "",
-    ...worked.map((d) => `${DAYS[d.i]} ${dates[d.i].slice(8)}: salario ${money(d.salary)} + propina ${money(d.tip)}`),
+    ...data.rows.map((d) => `${d.day}: salario ${money(d.salary)} + propina ${money(d.tip)}`),
     "",
     `Salario: ${money(r.salary)}`,
     `Propinas: ${money(r.tip)}`,
@@ -625,14 +654,11 @@ function SlipSheet({ person: p, monday, dates, staff, sched, tickets, settings, 
   ].join("\n");
 
   async function share() {
+    if (!ready) return;
     setSharing(true); setNote(null);
-    try {
-      const file = await slipImage(slipData(p, r, dates, sched, restaurant));
-      const res = await shareFiles([file], `Boleta ${p.name}`);
-      if (res === "downloaded") setNote("Este navegador no permite compartir: la boleta se descargó como imagen.");
-    } catch {
-      setNote("No se pudo generar la boleta.");
-    }
+    // la imagen ya está lista: el menú Compartir se abre de inmediato
+    const res = await shareFiles([ready.file], `Boleta ${p!.name}`);
+    if (res === "downloaded") setNote("Este navegador no permite compartir: la boleta se descargó como imagen.");
     setSharing(false);
   }
 
@@ -642,27 +668,18 @@ function SlipSheet({ person: p, monday, dates, staff, sched, tickets, settings, 
       <div className="sheet" role="dialog" aria-label={`Boleta de ${p.name}`}>
         <div className="grab" />
         <div className="sheethead">
-          <span className={`avatar ${p.type}`}>{initials(p.name)}</span>
-          <h3>{p.name}<div className="tag">Semana {shortDate(monday)} – {shortDate(dates[6])}</div></h3>
+          <button className="iconbtn" onClick={() => go(-1)} aria-label="Boleta anterior" disabled={paid.length < 2}>‹</button>
+          <h3 className="slipnav">{p.name}<div className="tag">Boleta {idx + 1} de {paid.length}</div></h3>
+          <button className="iconbtn" onClick={() => go(1)} aria-label="Boleta siguiente" disabled={paid.length < 2}>›</button>
           <button className="iconbtn" onClick={onClose} aria-label="Cerrar">✕</button>
         </div>
-        <div className="tbl"><table>
-          <thead><tr><th>Día</th><th className="n">Salario</th><th className="n">Propina</th></tr></thead>
-          <tbody>
-            {worked.map((d) => {
-              const c = sched[p.id][d.i];
-              return (
-                <tr key={d.i}>
-                  <td>{DAYS[d.i]} {dates[d.i].slice(8).replace(/^0/, "")}{c.s === "from" && <small className="hint"> desde {c.t}</small>}</td>
-                  <td className="n">{money(d.salary)}</td><td className="n">{money(d.tip)}</td>
-                </tr>
-              );
-            })}
-            <tr className="tot"><td>Subtotal</td><td className="n">{money(r.salary)}</td><td className="n">{money(r.tip)}</td></tr>
-          </tbody>
-        </table></div>
-        <div className="grand"><span>Total a pagar</span><b>{money(r.total)}</b></div>
-        <button className="primary" disabled={sharing} onClick={share}>{sharing ? "Preparando…" : "Compartir boleta"}</button>
+        <div className="slipview">
+          {ready
+            // eslint-disable-next-line @next/next/no-img-element -- imagen generada en el celular
+            ? <img src={ready.url} alt={`Boleta de ${p.name}: total ${money(r.total)}`} />
+            : <div className="slipwait">Preparando boleta…</div>}
+        </div>
+        <button className="primary" disabled={!ready || sharing} onClick={share}>Compartir esta boleta</button>
         <p className="note">Se abre el menú Compartir del celular: escoja WhatsApp y el contacto.</p>
         {note && <p className="note">{note}</p>}
         <a className="secondary linkbtn" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">Enviar como texto por WhatsApp</a>
