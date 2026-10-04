@@ -4,7 +4,7 @@ import type { Ticket } from "./reparto";
 import { addDays, defaultCell, weekDates, type Cell, type Settings, type Staff, type StaffType } from "./turnos";
 
 type StaffRow = { id: number; name: string; type: StaffType; days_off: number[]; daily_wage: number };
-type TicketRow = { billed: string; tip: number };
+type TicketRow = { billed: string; tip: number; amount: number };
 type ShiftRow = { staff_id: number; work_date: string; status: "full" | "from" | "off"; start_time: string | null };
 type SettingRow = { key: string; value: string };
 
@@ -35,7 +35,7 @@ async function queryWeek(monday: string) {
     sql`select staff_id, to_char(work_date, 'YYYY-MM-DD') as work_date, status,
           to_char(start_time, 'HH24:MI') as start_time
         from shifts where work_date between ${monday} and ${sunday}`,
-    sql`select to_char(billed_at, 'YYYY-MM-DD HH24:MI') as billed, tip_total::float8 as tip
+    sql`select to_char(billed_at, 'YYYY-MM-DD HH24:MI') as billed, tip_total::float8 as tip, amount::float8 as amount
         from tickets where billed_at >= ${from}::timestamp and billed_at < ${to}::timestamp
         order by billed_at`,
   ])) as [StaffRow[], ShiftRow[], TicketRow[]];
@@ -63,6 +63,7 @@ async function queryWeek(monday: string) {
     date: r.billed.slice(0, 10),
     time: r.billed.slice(11, 16),
     tip: r.tip,
+    amount: r.amount,
   }));
 
   return { staff, sched, settings, tickets };

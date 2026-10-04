@@ -454,30 +454,35 @@ function TipsTab({ restaurant, dates, staff, sched, tickets, settings, onSlip }:
       {tickets.length === 0 ? (
         <div className="empty">Todavía no hay cuentas cargadas para esta semana. Suba el archivo de ventas.</div>
       ) : (
-        <div className="tbl"><table>
-          <thead><tr><th>Día</th><th className="n">Propina</th><th className="n">Meseros</th><th className="n">c/u</th></tr></thead>
-          <tbody>
-            {days.map((d, i) => {
-              const partial = staff.some((p) => p.type !== "propietario" && sched[p.id][i].s === "from");
-              return (
-                <tr key={i}>
-                  <td>
-                    {DAYS[i]} {dates[i].slice(8).replace(/^0/, "")}
-                    {d.first && d.last && (
-                      <small className="dayspan">
-                        {d.first.time} → {d.last.time}{d.last.nextDay ? ` ${DAYS[(i + 1) % 7].toLowerCase()}` : ""} · {d.tickets} cuentas
-                      </small>
-                    )}
-                  </td>
-                  <td className="n">{money(d.total)}</td>
-                  <td className="n">{d.people}</td>
-                  <td className="n">{d.people ? (partial ? "por hora" : money(d.total / d.people)) : "—"}</td>
-                </tr>
-              );
-            })}
-            <tr className="tot"><td>Semana</td><td className="n">{money(totalTips)}</td><td /><td /></tr>
-          </tbody>
-        </table></div>
+        <div className="daylist">
+          {days.map((d, i) => {
+            const partial = staff.some((p) => p.type !== "propietario" && sched[p.id][i].s === "from");
+            return (
+              <div className="dayitem" key={i}>
+                <div className="dtop">
+                  <b>{DAYS[i]} {dates[i].slice(8).replace(/^0/, "")}</b>
+                  <span className="damt">{money(d.total)}<small> propina</small></span>
+                </div>
+                {d.first && d.last ? (
+                  <div className="dsub">
+                    <span>{d.first.time} → {d.last.time}{d.last.nextDay ? ` ${DAYS[(i + 1) % 7].toLowerCase()}` : ""} · {d.tickets} cuentas</span>
+                    <span>Ventas {money(d.sales)}</span>
+                  </div>
+                ) : (
+                  <div className="dsub"><span>Sin cuentas</span></div>
+                )}
+                <div className="dsub">
+                  <span>{d.people} {d.people === 1 ? "mesero" : "meseros"}</span>
+                  <span>{d.people ? (partial ? "reparto por hora" : `${money(d.total / d.people)} c/u`) : "—"}</span>
+                </div>
+              </div>
+            );
+          })}
+          <div className="dayitem total">
+            <div className="dtop"><b>Semana</b><span className="damt">{money(totalTips)}<small> propina</small></span></div>
+            <div className="dsub"><span>{days.reduce((a, d) => a + d.tickets, 0)} cuentas</span><span>Ventas {money(days.reduce((a, d) => a + d.sales, 0))}</span></div>
+          </div>
+        </div>
       )}
 
       {warnings.length > 0 && (

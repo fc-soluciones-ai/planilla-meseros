@@ -2,10 +2,11 @@
 import { DLONG, isPresent, opMin, turnDate, type Cell, type Staff } from "./turnos";
 
 /** Cuenta con propina ya cargada: fecha y hora de facturación tal como vienen del sistema. */
-export type Ticket = { date: string; time: string; tip: number };
+export type Ticket = { date: string; time: string; tip: number; amount: number };
 
 export type DayCalc = {
   total: number;      // propina del día (día + madrugada siguiente hasta la hora de corte)
+  sales: number;      // ventas del día (importe de las cuentas, sin propina)
   tickets: number;
   people: number;     // personas marcadas ese día
   unassigned: number; // propina facturada a una hora en que no había nadie marcado
@@ -35,7 +36,7 @@ export function calcWeek(
 ) {
   const team = staff.filter(sharesTips);
   const days: DayCalc[] = dates.map((_, d) => ({
-    total: 0, tickets: 0, unassigned: 0, first: null, last: null,
+    total: 0, sales: 0, tickets: 0, unassigned: 0, first: null, last: null,
     people: team.filter((p) => sched[p.id]?.[d]?.s !== "off").length,
   }));
   const exact: Record<number, number[]> = {};
@@ -45,6 +46,7 @@ export function calcWeek(
     const d = dates.indexOf(turnDate(t.date, t.time, cutoff));
     if (d < 0) continue; // pertenece a otra semana
     days[d].total += t.tip;
+    days[d].sales += t.amount;
     days[d].tickets += 1;
     const m = opMin(t.time, cutoff);
     const mark = { time: t.time, nextDay: m >= 1440 };
