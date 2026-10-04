@@ -13,7 +13,7 @@ export default async function LoginPage() {
   return (
     <div className="app login">
       <h1>Planilla de meseros</h1>
-      <p className="hint">Escriba la contraseña para entrar.</p>
+      <p className="hint">Escriba su usuario y contraseña.</p>
       <LoginForm />
     </div>
   );

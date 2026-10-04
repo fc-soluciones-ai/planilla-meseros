@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { endSession, requireAuth, startSession } from "@/lib/auth";
+import { ADMIN_USERNAME, endSession, hashPassword, requireAuth, startSession } from "@/lib/auth";
 import { withSchema } from "@/lib/schema";
 import { HHMM, ISO_DATE, addDays, mondayOf, turnDate, type Cell, type Staff, type StaffType } from "@/lib/turnos";
 import { parseVentas } from "@/lib/ventas";
@@ -149,9 +149,50 @@ export async function saveSharedCodes(codes: string[]) {
 
 export async function login(_prev: string | null, form: FormData): Promise<string | null> {
   if (!process.env.APP_PASSWORD) return "Falta configurar APP_PASSWORD en Vercel.";
-  const ok = await startSession(String(form.get("password") ?? ""));
-  if (!ok) return "Contraseña incorrecta.";
+  const ok = await startSession(String(form.get("username") ?? ""), String(form.get("password") ?? ""));
+  if (!ok) return "Usuario o contraseña incorrectos.";
   redirect("/");
+}
+
+export type UserResult = { ok: true } | { ok: false; error: string };
+const USERNAME = /^[a-z0-9._-]{3,30}$/;
+
+function checkPassword(password: string): string | null {
+  return password.length >= 6 && password.length <= 100 ? null : "La contraseña debe tener al menos 6 caracteres.";
+}
+
+/** Agrega un usuario que puede entrar a la app. */
+export async function addUser(name: string, username: string, password: string): Promise<UserResult> {
+  await requireAuth();
+  const n = name.trim();
+  const u = username.trim().toLowerCase();
+  if (!n || n.length > 60) return { ok: false, error: "Escriba el nombre." };
+  if (!USERNAME.test(u)) return { ok: false, error: "El usuario debe tener de 3 a 30 letras o números, sin espacios." };
+  if (u === ADMIN_USERNAME) return { ok: false, error: "Ese usuario está reservado." };
+  const bad = checkPassword(password);
+  if (bad) return { ok: false, error: bad };
+  try {
+    await db()`insert into users (name, username, password_hash) values (${n}, ${u}, ${await hashPassword(password)})`;
+    return { ok: true };
+  } catch (e) {
+    if ((e as { code?: string }).code === "23505") return { ok: false, error: `Ya existe el usuario "${u}".` };
+    throw e;
+  }
+}
+
+export async function changeUserPassword(id: number, password: string): Promise<UserResult> {
+  await requireAuth();
+  const bad = checkPassword(password);
+  if (bad) return { ok: false, error: bad };
+  await db()`update users set password_hash = ${await hashPassword(password)} where id = ${id}`;
+  return { ok: true };
+}
+
+export async function deleteUser(id: number): Promise<UserResult> {
+  const me = await requireAuth();
+  if (me.userId === id) return { ok: false, error: "No puede quitarse a sí mismo mientras está dentro." };
+  await db()`delete from users where id = ${id}`;
+  return { ok: true };
 }
 
 export async function logout() {

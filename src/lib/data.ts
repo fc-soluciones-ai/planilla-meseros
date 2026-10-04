@@ -78,3 +78,9 @@ function parseCodes(v: string | undefined): string[] {
     return [];
   }
 }
+
+export type AppUser = { id: number; name: string; username: string };
+
+export async function loadUsers(): Promise<AppUser[]> {
+  return (await withSchema(() => db()`select id, name, username from users order by name`)) as AppUser[];
+}

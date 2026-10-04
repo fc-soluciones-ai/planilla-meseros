@@ -10,9 +10,11 @@ import {
   type Cell, type Settings, type Staff, type StaffType,
 } from "@/lib/turnos";
 import {
-  addStaff, deactivateStaff, importVentas, logout, saveSettings, saveSharedCodes, saveShift, updateStaff,
-  type ImportResult, type StaffInput,
+  addStaff, addUser, changeUserPassword, deactivateStaff, deleteUser, importVentas, logout, saveSettings, saveSharedCodes, saveShift, updateStaff,
+  type ImportResult, type StaffInput, type UserResult,
 } from "./actions";
+import type { AppUser } from "@/lib/data";
+import type { Session } from "@/lib/auth";
 
 type Props = {
   monday: string;
@@ -21,8 +23,10 @@ type Props = {
   sched: Record<number, Cell[]>;
   settings: Settings;
   tickets: Ticket[];
+  users: AppUser[];
+  me: Session;
 };
-type Tab = "staff" | "day" | "tips";
+type Tab = "staff" | "day" | "tips" | "config";
 type Sheet = { kind: "form"; id: number | null } | { kind: "slip"; id: number } | null;
 
 const GROUPS: { type: StaffType; title: string }[] = [
@@ -63,6 +67,11 @@ export default function Planilla(props: Props) {
     setTimeout(() => setToast((t) => (t?.msg === msg ? null : t)), 2200);
   }
 
+  function setSharedCodes(codes: string[]) {
+    setSettings((s) => ({ ...s, sharedCodes: codes }));
+    persist(() => saveSharedCodes(codes), "Guardado");
+  }
+
   function setCell(id: number, d: number, cell: Cell) {
     setSched((s) => ({ ...s, [id]: s[id].map((c, i) => (i === d ? cell : c)) }));
     persist(() => saveShift(id, dates[d], cell));
@@ -78,7 +87,6 @@ export default function Planilla(props: Props) {
         <header className="top">
           <div className="brand">
             <h1>Planilla de meseros</h1>
-            <form action={logout}><button className="link">Salir</button></form>
           </div>
           <div className="weeknav">
             <Link className="iconbtn" href={`/?semana=${addDays(monday, -7)}`} aria-label="Semana anterior">‹</Link>
@@ -102,14 +110,15 @@ export default function Planilla(props: Props) {
             <DayTab staff={staff} sched={sched} settings={settings} dates={dates} day={day} setDay={setDay} />
           )}
           {tab === "tips" && (
-            <TipsTab monday={monday} dates={dates} staff={staff} sched={sched} tickets={props.tickets}
+            <TipsTab dates={dates} staff={staff} sched={sched} tickets={props.tickets}
               settings={settings}
               onSlip={(id) => setSheet({ kind: "slip", id })}
-              onSharedCodes={(codes) => {
-                setSettings((s) => ({ ...s, sharedCodes: codes }));
-                persist(() => saveSharedCodes(codes), "Guardado");
-              }}
-              onChange={(s) => {
+              onSharedCodes={setSharedCodes} />
+          )}
+          {tab === "config" && (
+            <ConfigTab users={props.users} me={props.me} settings={settings}
+              onSharedCodes={setSharedCodes}
+              onSettings={(s) => {
                 setSettings(s);
                 persist(() => saveSettings(s.open, s.cutoff), "Horario guardado");
               }} />
@@ -124,6 +133,8 @@ export default function Planilla(props: Props) {
           icon={<><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></>} />
         <TabButton on={tab === "tips"} onClick={() => setTab("tips")} label="Propinas"
           icon={<><circle cx="12" cy="12" r="9" /><path d="M14.8 9.2c-.5-1-1.6-1.6-2.8-1.6-1.6 0-2.8.9-2.8 2.2 0 3 5.6 1.6 5.6 4.5 0 1.3-1.2 2.2-2.8 2.2-1.3 0-2.4-.6-2.9-1.7M12 6v1.6M12 16.4V18" /></>} />
+        <TabButton on={tab === "config"} onClick={() => setTab("config")} label="Configuración"
+          icon={<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></>} />
       </nav>
 
       {sheet?.kind === "form" && (
@@ -450,10 +461,9 @@ function DayTab({ staff, sched, settings, dates, day, setDay }: {
   );
 }
 
-function TipsTab({ monday, dates, staff, sched, tickets, settings, onSlip, onSharedCodes, onChange }: {
-  monday: string; dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>; tickets: Ticket[];
+function TipsTab({ dates, staff, sched, tickets, settings, onSlip, onSharedCodes }: {
+  dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>; tickets: Ticket[];
   settings: Settings; onSlip: (id: number) => void; onSharedCodes: (codes: string[]) => void;
-  onChange: (s: Settings) => void;
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -546,13 +556,10 @@ function TipsTab({ monday, dates, staff, sched, tickets, settings, onSlip, onSha
       {settings.sharedCodes.length > 0 && (
         <>
           <h2>Códigos compartidos</h2>
-          <p className="hint">Los usa el equipo. Su propina entra al reparto del día entre quienes trabajaron.</p>
+          <p className="hint">Su propina entra al reparto del día entre quienes trabajaron. Se cambian en Configuración.</p>
           <div className="quick">
             {settings.sharedCodes.map((c) => (
-              <button key={c} className="chip" aria-label={`Quitar ${c}`}
-                onClick={() => onSharedCodes(settings.sharedCodes.filter((x) => x !== c))}>
-                {c}{shared.get(c) ? ` · ${money(shared.get(c)!)}` : ""} ✕
-              </button>
+              <span key={c} className="chip">{c}{shared.get(c) ? ` · ${money(shared.get(c)!)}` : " · sin cuentas esta semana"}</span>
             ))}
           </div>
         </>
@@ -582,27 +589,6 @@ function TipsTab({ monday, dates, staff, sched, tickets, settings, onSlip, onSha
         </>
       )}
 
-      <h2>Reglas</h2>
-      <div className="rule">
-        <p><b>Propina del día:</b> todo el día más la madrugada siguiente hasta la hora de corte, dividido entre los meseros que trabajaron.</p>
-        <p><b>Quien entró tarde</b> recibe solo de las cuentas facturadas desde su hora de entrada.</p>
-        <p><b>Semana:</b> lunes a domingo (el archivo de lunes a lunes).</p>
-        <div className="cfg">
-          <label className="field">
-            Abre a las
-            <select id="cfg-open" value={settings.open} onChange={(e) => onChange({ ...settings, open: e.target.value })}>
-              {["06:00", "07:00", "08:00", "09:00", "10:00", "11:00", "12:00"].map((v) => <option key={v}>{v}</option>)}
-            </select>
-          </label>
-          <label className="field">
-            Hora de corte
-            <select id="cfg-cutoff" value={settings.cutoff} onChange={(e) => onChange({ ...settings, cutoff: e.target.value })}>
-              {["03:00", "04:00", "05:00", "06:00"].map((v) => <option key={v}>{v}</option>)}
-            </select>
-          </label>
-        </div>
-        <p className="note" style={{ margin: 0 }}>Semana del {shortDate(monday)} · el cálculo se actualiza al marcar o cambiar horas.</p>
-      </div>
     </>
   );
 }
@@ -657,6 +643,136 @@ function SlipSheet({ person: p, monday, dates, staff, sched, tickets, settings, 
         <div className="grand"><span>Total a pagar</span><b>{money(r.total)}</b></div>
         <a className="primary linkbtn" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">Enviar por WhatsApp</a>
         <button className="secondary" onClick={copy}>{copied ? "Copiado" : "Copiar texto"}</button>
+      </div>
+    </>
+  );
+}
+
+function ConfigTab({ users, me, settings, onSharedCodes, onSettings }: {
+  users: AppUser[]; me: Session; settings: Settings;
+  onSharedCodes: (codes: string[]) => void; onSettings: (s: Settings) => void;
+}) {
+  const router = useRouter();
+  const [busy, start] = useTransition();
+  const [msg, setMsg] = useState<{ text: string; err?: boolean } | null>(null);
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [newPw, setNewPw] = useState("");
+  const [removing, setRemoving] = useState<number | null>(null);
+  const [code, setCode] = useState("");
+
+  function run(fn: () => Promise<UserResult>, ok: string, after?: () => void) {
+    start(async () => {
+      try {
+        const r = await fn();
+        if (r.ok) { setMsg({ text: ok }); after?.(); router.refresh(); }
+        else setMsg({ text: r.error, err: true });
+      } catch {
+        setMsg({ text: "No se pudo guardar. Revise la conexión.", err: true });
+      }
+    });
+  }
+
+  return (
+    <>
+      <h2>Usuarios</h2>
+      <p className="hint">Personas que pueden entrar a la app con su propio usuario y contraseña.</p>
+      <div className="list">
+        {users.length === 0 && <div className="empty">Todavía no hay usuarios. Agregue el primero abajo.</div>}
+        {users.map((u) => (
+          <div key={u.id} className="userrow">
+            <div className="who">
+              <b>{u.name}{u.id === me.userId && <span className="tag"> · usted</span>}</b>
+              <span className="tag">Usuario: {u.username}</span>
+            </div>
+            {editing === u.id ? (
+              <form className="inline" onSubmit={(e) => {
+                e.preventDefault();
+                run(() => changeUserPassword(u.id, newPw), `Contraseña de ${u.name} cambiada`, () => { setEditing(null); setNewPw(""); });
+              }}>
+                <input id={`pw-${u.id}`} type="password" autoComplete="new-password" placeholder="Contraseña nueva" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+                <button className="chip on" disabled={busy}>Guardar</button>
+                <button type="button" className="link" onClick={() => setEditing(null)}>Cancelar</button>
+              </form>
+            ) : removing === u.id ? (
+              <div className="inline">
+                <button className="chip danger" disabled={busy} onClick={() => run(() => deleteUser(u.id), `${u.name} ya no puede entrar`, () => setRemoving(null))}>Sí, quitar</button>
+                <button className="link" onClick={() => setRemoving(null)}>Cancelar</button>
+              </div>
+            ) : (
+              <div className="inline">
+                <button className="chip" onClick={() => { setEditing(u.id); setNewPw(""); }}>Cambiar contraseña</button>
+                {u.id !== me.userId && <button className="chip" onClick={() => setRemoving(u.id)}>Quitar</button>}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <form className="rule" style={{ marginTop: 12 }} onSubmit={(e) => {
+        e.preventDefault();
+        run(() => addUser(name, username, password), `Usuario ${username.trim().toLowerCase()} creado`, () => { setName(""); setUsername(""); setPassword(""); });
+      }}>
+        <b>Agregar usuario</b>
+        <label className="field">Nombre<input id="u-name" value={name} maxLength={60} placeholder="Ej. Scarlett" onChange={(e) => setName(e.target.value)} required /></label>
+        <label className="field">Usuario para entrar
+          <input id="u-username" value={username} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Ej. scarlett"
+            onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ""))} required />
+        </label>
+        <label className="field">Contraseña
+          <span className="pwrow">
+            <input id="u-password" type={showPw ? "text" : "password"} autoComplete="new-password" value={password} placeholder="Mínimo 6 caracteres" onChange={(e) => setPassword(e.target.value)} required />
+            <button type="button" className="link" onClick={() => setShowPw((x) => !x)}>{showPw ? "Ocultar" : "Ver"}</button>
+          </span>
+        </label>
+        <button className="primary" disabled={busy}>{busy ? "Guardando…" : "Agregar usuario"}</button>
+      </form>
+      {msg && <p className={msg.err ? "error" : "okmsg"} style={{ marginTop: 8 }}>{msg.text}</p>}
+
+      <h2>Horario del turno</h2>
+      <div className="rule">
+        <p>La propina de cada día incluye la madrugada siguiente hasta la hora de corte.</p>
+        <div className="cfg">
+          <label className="field">
+            Abre a las
+            <select id="cfg-open" value={settings.open} onChange={(e) => onSettings({ ...settings, open: e.target.value })}>
+              {["06:00", "07:00", "08:00", "09:00", "10:00", "11:00", "12:00"].map((v) => <option key={v}>{v}</option>)}
+            </select>
+          </label>
+          <label className="field">
+            Hora de corte
+            <select id="cfg-cutoff" value={settings.cutoff} onChange={(e) => onSettings({ ...settings, cutoff: e.target.value })}>
+              {["03:00", "04:00", "05:00", "06:00"].map((v) => <option key={v}>{v}</option>)}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <h2>Códigos compartidos</h2>
+      <p className="hint">Códigos del sistema que usa cualquiera, como el de alguien que ya no trabaja. Su propina se reparte sin aviso.</p>
+      <div className="quick">
+        {settings.sharedCodes.length === 0 && <span className="hint">Ninguno.</span>}
+        {settings.sharedCodes.map((c) => (
+          <button key={c} className="chip" aria-label={`Quitar ${c}`} onClick={() => onSharedCodes(settings.sharedCodes.filter((x) => x !== c))}>{c} ✕</button>
+        ))}
+      </div>
+      <form className="inline" onSubmit={(e) => {
+        e.preventDefault();
+        const c = norm(code);
+        if (c && !settings.sharedCodes.includes(c)) onSharedCodes([...settings.sharedCodes, c]);
+        setCode("");
+      }}>
+        <input id="shared-code" value={code} placeholder="Ej. ELENA" autoCapitalize="characters" onChange={(e) => setCode(e.target.value)} />
+        <button className="chip on">Agregar</button>
+      </form>
+
+      <h2>Sesión</h2>
+      <div className="rule">
+        <p>Entró como <b>{me.name}</b> ({me.username}).</p>
+        <form action={logout}><button className="secondary" style={{ marginTop: 0 }}>Salir</button></form>
       </div>
     </>
   );

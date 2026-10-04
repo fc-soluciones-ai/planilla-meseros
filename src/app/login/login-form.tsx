@@ -8,6 +8,10 @@ export default function LoginForm() {
   return (
     <form action={action}>
       <label className="field">
+        Usuario
+        <input id="username" name="username" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
+      </label>
+      <label className="field">
         Contraseña
         <input id="password" name="password" type="password" autoComplete="current-password" required />
       </label>

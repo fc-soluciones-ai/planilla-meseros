@@ -110,8 +110,8 @@ fieldset.field legend { padding: 0; margin-bottom: 6px }
 .rule p { margin: 0 }
 .cfg { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
 
-nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--card); border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(3, 1fr); padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)) }
-nav.tabs button { border: 0; background: transparent; color: var(--muted); padding: 8px 0; font-weight: 600; font-size: 13px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; border-radius: 10px }
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--card); border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)) }
+nav.tabs button { border: 0; background: transparent; color: var(--muted); padding: 8px 0; font-weight: 600; font-size: 12px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; border-radius: 10px }
 nav.tabs button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8 }
 nav.tabs button.on { color: var(--accent); background: var(--accent-soft) }
 @media (prefers-reduced-motion: no-preference) {
@@ -168,3 +168,12 @@ label.gcell:focus-within { outline: 2px solid var(--accent); outline-offset: 2px
 .install { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; font-size: 14px }
 .install p { margin: 0; flex: 1; min-width: 180px }
 .install-actions { display: flex; align-items: center; gap: 12px }
+
+/* configuración */
+.userrow { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px }
+.inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+.inline input { flex: 1; min-width: 140px; font-size: 16px; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink) }
+.pwrow { display: flex; gap: 10px; align-items: center }
+.pwrow input { flex: 1; min-width: 0 }
+.chip.danger { background: var(--danger); color: #fff; border-color: var(--danger) }
+.chip:disabled { opacity: .6 }

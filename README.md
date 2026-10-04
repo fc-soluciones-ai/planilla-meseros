@@ -20,7 +20,9 @@ Las dos horas se cambian en la pestaña **Propinas**. La lógica está en `src/l
 
 - Next.js 16 (App Router, Server Actions) desplegado en Vercel
 - Postgres en Neon, conectado desde Vercel → Storage
-- Acceso con una contraseña (`APP_PASSWORD`), sesión de 90 días en el celular
+- Acceso con usuario y contraseña, sesión de 90 días en el celular
+  - `admin` + `APP_PASSWORD` (variable de Vercel) siempre puede entrar
+  - Los demás usuarios se crean en **Configuración**. Cambiar `APP_PASSWORD` cierra todas las sesiones
 
 ## Puesta en marcha en Vercel
 
@@ -50,7 +52,8 @@ npm run dev
 | `staff` | Personas: nombre, tipo, días libres habituales, salario por día y nombre en el sistema |
 | `shifts` | Un registro por persona y día trabajado: completo o desde una hora. Un día libre no tiene registro |
 | `tickets` | Cuentas con propina del archivo de ventas (una por folio) |
-| `settings` | Hora de apertura y hora de corte |
+| `users` | Usuarios que pueden entrar (contraseña cifrada con scrypt) |
+| `settings` | Hora de apertura, hora de corte y códigos compartidos |
 
 El esquema está en `src/lib/schema.ts`.
 

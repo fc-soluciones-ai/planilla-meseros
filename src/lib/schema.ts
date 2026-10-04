@@ -3,7 +3,7 @@ import { db } from "./db";
 // Esquema de la base. Se aplica en una base nueva o cuando schema_version es de una versión anterior.
 // En shifts, un día sin fila toma el valor por defecto: los fijos trabajan todo menos sus días libres.
 // Una fila con status 'off' es un libre marcado a mano.
-export const SCHEMA_VERSION = "3";
+export const SCHEMA_VERSION = "4";
 
 const STATEMENTS = [
   `create table if not exists staff (
@@ -49,6 +49,14 @@ const STATEMENTS = [
     imported_at     timestamptz not null default now()
   )`,
   `create index if not exists tickets_billed_at on tickets (billed_at)`,
+  // Usuarios que pueden entrar a la app (además de "admin" con APP_PASSWORD)
+  `create table if not exists users (
+    id             serial primary key,
+    name           text not null,
+    username       text not null unique,            -- en minúsculas
+    password_hash  text not null,                   -- scrypt$sal$hash
+    created_at     timestamptz not null default now()
+  )`,
   `insert into settings (key, value) values ('open', '07:00'), ('cutoff', '05:00')
    on conflict (key) do nothing`,
 ];
