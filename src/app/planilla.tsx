@@ -27,7 +27,7 @@ type Sheet = { kind: "days"; id: number } | { kind: "form"; id: number | null } 
 const GROUPS: { type: StaffType; title: string }[] = [
   { type: "fijo", title: "Meseros fijos" },
   { type: "ocasional", title: "Apoyo ocasional" },
-  { type: "propietario", title: "Propietarios" },
+  { type: "propietario", title: "Propietarios · su propina entra al reparto, no reciben parte" },
 ];
 const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 const firstName = (n: string) => n.split(/\s+/)[0];
@@ -493,7 +493,7 @@ function TipsTab({ monday, dates, staff, sched, tickets, settings, onSlip, onCha
           <thead><tr><th>Día</th><th className="n">Propina</th><th className="n">Meseros</th><th className="n">c/u</th></tr></thead>
           <tbody>
             {days.map((d, i) => {
-              const partial = staff.some((p) => sched[p.id][i].s === "from");
+              const partial = staff.some((p) => p.type !== "propietario" && sched[p.id][i].s === "from");
               return (
                 <tr key={i}>
                   <td>{DAYS[i]} {dates[i].slice(8).replace(/^0/, "")}</td>

@@ -20,7 +20,7 @@ export const MES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep
 export const TYPES: Record<StaffType, string> = {
   fijo: "Mesero fijo",
   ocasional: "Apoyo ocasional",
-  propietario: "Propietario",
+  propietario: "Propietario (no recibe propina)",
 };
 
 export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;

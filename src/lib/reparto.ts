@@ -19,6 +19,9 @@ export type PersonCalc = {
 };
 export type Warning = { level: "warn" | "info"; text: string };
 
+/** Los propietarios facturan y su propina entra al reparto, pero no reciben parte ni salario. */
+export const sharesTips = (p: Staff) => p.type !== "propietario";
+
 export const norm = (s: string) =>
   s.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase();
 
@@ -34,25 +37,26 @@ export const posKey = (p: Staff) => norm(p.posName || p.name.split(/\s+/)[0]);
 export function calcWeek(
   dates: string[], staff: Staff[], sched: Record<number, Cell[]>, tickets: Ticket[], cutoff: string,
 ) {
+  const team = staff.filter(sharesTips);
   const days: DayCalc[] = dates.map((_, d) => ({
     total: 0, tickets: 0, unassigned: 0,
-    people: staff.filter((p) => sched[p.id]?.[d]?.s !== "off").length,
+    people: team.filter((p) => sched[p.id]?.[d]?.s !== "off").length,
   }));
   const exact: Record<number, number[]> = {};
-  for (const p of staff) exact[p.id] = dates.map(() => 0);
+  for (const p of team) exact[p.id] = dates.map(() => 0);
 
   for (const t of tickets) {
     const d = dates.indexOf(turnDate(t.date, t.time, cutoff));
     if (d < 0) continue; // pertenece a otra semana
     days[d].total += t.tip;
     days[d].tickets += 1;
-    const present = staff.filter((p) => sched[p.id] && isPresent(sched[p.id][d], t.time, cutoff));
+    const present = team.filter((p) => sched[p.id] && isPresent(sched[p.id][d], t.time, cutoff));
     if (!present.length) { days[d].unassigned += t.tip; continue; }
     for (const p of present) exact[p.id][d] += t.tip / present.length;
   }
 
   // Se redondea al colón por persona y por día; la boleta suma esos montos.
-  const people: PersonCalc[] = staff.map((p) => {
+  const people: PersonCalc[] = team.map((p) => {
     const ds = dates.map((_, d) => ({
       salary: sched[p.id]?.[d]?.s !== "off" ? p.dailyWage : 0,
       tip: Math.round(exact[p.id][d]),
@@ -79,6 +83,7 @@ export function weekWarnings(
     if (d < 0) continue;
     const p = byKey.get(norm(t.waiter));
     if (!p) { unknown.set(t.waiter, (unknown.get(t.waiter) ?? 0) + t.tip); continue; }
+    if (!sharesTips(p)) continue;
     const cell = sched[p.id][d];
     const key = `${p.id}-${d}`;
     if (seen.has(key)) continue;
@@ -96,7 +101,7 @@ export function weekWarnings(
     }
   });
   for (const [w, tip] of unknown) {
-    out.push({ level: "info", text: `${w} facturó ₡${Math.round(tip).toLocaleString("en-US")} de propina y no está en la planilla. Su propina sí entra al reparto del día. Si es parte del equipo, escriba "${w}" como nombre en el sistema de esa persona.` });
+    out.push({ level: "info", text: `${w} facturó ₡${Math.round(tip).toLocaleString("en-US")} de propina y no está en la planilla. Su propina sí entra al reparto del día. Si es del equipo o propietario, escriba "${w}" como nombre en el sistema de esa persona.` });
   }
   return out;
 }
