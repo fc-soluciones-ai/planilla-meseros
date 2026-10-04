@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
+import InstallButton from "./install-button";
 import { calcWeek, norm, sharedTotals, weekWarnings, type Ticket } from "@/lib/reparto";
 import {
   DAYS, DLONG, TYPES, addDays, fmt, isPresent, opMin, shortDate, toMin, weekDates,
@@ -87,6 +88,7 @@ export default function Planilla(props: Props) {
             </div>
             <Link className="iconbtn" href={`/?semana=${addDays(monday, 7)}`} aria-label="Semana siguiente">›</Link>
           </div>
+          <InstallButton />
         </header>
 
         <main>

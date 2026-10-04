@@ -9,6 +9,8 @@ const mono = JetBrains_Mono({ variable: "--font-mono", subsets: ["latin"], weigh
 export const metadata: Metadata = {
   title: "Planilla de meseros",
   description: "Días y horas de entrada de los meseros para repartir las propinas.",
+  applicationName: "Planilla",
+  appleWebApp: { capable: true, title: "Planilla", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {
