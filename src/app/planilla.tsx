@@ -461,7 +461,14 @@ function TipsTab({ restaurant, dates, staff, sched, tickets, settings, onSlip }:
               const partial = staff.some((p) => p.type !== "propietario" && sched[p.id][i].s === "from");
               return (
                 <tr key={i}>
-                  <td>{DAYS[i]} {dates[i].slice(8).replace(/^0/, "")}</td>
+                  <td>
+                    {DAYS[i]} {dates[i].slice(8).replace(/^0/, "")}
+                    {d.first && d.last && (
+                      <small className="dayspan">
+                        {d.first.time} → {d.last.time}{d.last.nextDay ? ` ${DAYS[(i + 1) % 7].toLowerCase()}` : ""} · {d.tickets} cuentas
+                      </small>
+                    )}
+                  </td>
                   <td className="n">{money(d.total)}</td>
                   <td className="n">{d.people}</td>
                   <td className="n">{d.people ? (partial ? "por hora" : money(d.total / d.people)) : "—"}</td>
