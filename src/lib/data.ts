@@ -1,11 +1,11 @@
 import { db } from "./db";
-import { withSchema } from "./schema";
+import { SCHEMA_VERSION, ensureSchema, withSchema } from "./schema";
 import type { Ticket } from "./reparto";
-import { addDays, weekDates, type Cell, type Settings, type Staff, type StaffType } from "./turnos";
+import { addDays, defaultCell, weekDates, type Cell, type Settings, type Staff, type StaffType } from "./turnos";
 
 type StaffRow = { id: number; name: string; type: StaffType; days_off: number[]; daily_wage: number; pos_name: string | null };
 type TicketRow = { waiter: string; billed: string; tip: number };
-type ShiftRow = { staff_id: number; work_date: string; status: "full" | "from"; start_time: string | null };
+type ShiftRow = { staff_id: number; work_date: string; status: "full" | "from" | "off"; start_time: string | null };
 type SettingRow = { key: string; value: string };
 
 export async function loadWeek(monday: string) {
@@ -17,6 +17,7 @@ async function queryWeek(monday: string) {
   const sunday = addDays(monday, 6);
   const settingRows = (await sql`select key, value from settings`) as SettingRow[];
   const s = Object.fromEntries(settingRows.map((r) => [r.key, r.value]));
+  if (s.schema_version !== SCHEMA_VERSION) await ensureSchema(); // base de una versión anterior
   const settings: Settings = {
     open: s.open ?? "07:00",
     cutoff: s.cutoff ?? "05:00",
@@ -50,11 +51,13 @@ async function queryWeek(monday: string) {
 
   const dates = weekDates(monday);
   const sched: Record<number, Cell[]> = {};
-  for (const p of staff) sched[p.id] = dates.map(() => ({ s: "off" }));
+  // Lo que no se ha tocado sale con el valor por defecto de cada persona
+  for (const p of staff) sched[p.id] = dates.map((_, d) => defaultCell(p, d));
   for (const r of shiftRows) {
     const i = dates.indexOf(r.work_date);
     if (i < 0 || !sched[r.staff_id]) continue;
-    sched[r.staff_id][i] = r.status === "from" ? { s: "from", t: r.start_time ?? "07:00" } : { s: "full" };
+    sched[r.staff_id][i] =
+      r.status === "from" ? { s: "from", t: r.start_time ?? "07:00" } : r.status === "full" ? { s: "full" } : { s: "off" };
   }
 
   const tickets: Ticket[] = ticketRows.map((r) => ({

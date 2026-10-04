@@ -1,7 +1,10 @@
 import { db } from "./db";
 
-// Esquema de la base. Se aplica cuando falta una tabla o columna (base nueva o de una versión anterior).
-// Un día libre NO tiene fila en shifts: solo se guardan los días trabajados.
+// Esquema de la base. Se aplica en una base nueva o cuando schema_version es de una versión anterior.
+// En shifts, un día sin fila toma el valor por defecto: los fijos trabajan todo menos sus días libres.
+// Una fila con status 'off' es un libre marcado a mano.
+export const SCHEMA_VERSION = "3";
+
 const STATEMENTS = [
   `create table if not exists staff (
     id          serial primary key,
@@ -14,12 +17,16 @@ const STATEMENTS = [
   `create table if not exists shifts (
     staff_id    int not null references staff(id) on delete cascade,
     work_date   date not null,                      -- fecha del turno (la madrugada va al día anterior)
-    status      text not null check (status in ('full', 'from')),
+    status      text not null,
     start_time  time,                               -- hora de entrada si no hizo el día completo
     updated_at  timestamptz not null default now(),
-    primary key (staff_id, work_date),
-    check (status = 'full' or start_time is not null)
+    primary key (staff_id, work_date)
   )`,
+  // Restricciones con nombre fijo para poder cambiarlas en bases existentes
+  `alter table shifts drop constraint if exists shifts_status_check`,
+  `alter table shifts drop constraint if exists shifts_check`,
+  `alter table shifts add constraint shifts_status_check check (status in ('full', 'from', 'off'))`,
+  `alter table shifts add constraint shifts_check check (status <> 'from' or start_time is not null)`,
   `create table if not exists settings (
     key    text primary key,
     value  text not null
@@ -49,6 +56,8 @@ const STATEMENTS = [
 export async function ensureSchema() {
   const sql = db();
   for (const s of STATEMENTS) await sql.query(s);
+  await sql`insert into settings (key, value) values ('schema_version', ${SCHEMA_VERSION})
+            on conflict (key) do update set value = excluded.value`;
 }
 
 /** Error de Postgres por tabla o columna que no existe: la base es de una versión anterior. */

@@ -25,5 +25,7 @@ export default async function Page({ searchParams }: PageProps<"/">) {
     return <SetupNotice error={e instanceof Error ? e.message : String(e)} />;
   }
 
-  return <Planilla key={monday} monday={monday} today={today} {...data} />;
+  // La clave cambia si cambian las personas o sus días libres: la pantalla se rearma con los días por defecto nuevos
+  const key = `${monday}|${data.staff.map((p) => `${p.id}:${p.type}:${p.daysOff.join("")}`).join(",")}`;
+  return <Planilla key={key} monday={monday} today={today} {...data} />;
 }

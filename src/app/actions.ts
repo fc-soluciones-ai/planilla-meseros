@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { endSession, requireAuth, startSession } from "@/lib/auth";
 import { withSchema } from "@/lib/schema";
-import { HHMM, ISO_DATE, addDays, type Cell, type Staff, type StaffType } from "@/lib/turnos";
+import { HHMM, ISO_DATE, addDays, mondayOf, turnDate, type Cell, type Staff, type StaffType } from "@/lib/turnos";
 import { parseVentas } from "@/lib/ventas";
 
 const STAFF_TYPES: StaffType[] = ["fijo", "ocasional", "propietario"];
@@ -28,40 +28,18 @@ function checkStaffInput(p: StaffInput): StaffInput {
   return { ...p, name, posName };
 }
 
-/** Guarda un día de una persona. Libre borra la fila. */
+const upsertShift = (sql: ReturnType<typeof db>, staffId: number, date: string, c: Cell) =>
+  sql`insert into shifts (staff_id, work_date, status, start_time)
+      values (${staffId}, ${date}, ${c.s}, ${c.s === "from" ? c.t! : null})
+      on conflict (staff_id, work_date)
+      do update set status = excluded.status, start_time = excluded.start_time, updated_at = now()`;
+
+/** Guarda un día de una persona. Libre también se guarda, para que no vuelva al valor por defecto. */
 export async function saveShift(staffId: number, date: string, cell: Cell) {
   await requireAuth();
   if (!ISO_DATE.test(date)) throw new Error("Fecha inválida.");
   checkCell(cell);
-  const sql = db();
-  if (cell.s === "off") {
-    await sql`delete from shifts where staff_id = ${staffId} and work_date = ${date}`;
-  } else {
-    const time = cell.s === "from" ? cell.t! : null;
-    await sql`insert into shifts (staff_id, work_date, status, start_time)
-              values (${staffId}, ${date}, ${cell.s}, ${time})
-              on conflict (staff_id, work_date)
-              do update set status = excluded.status, start_time = excluded.start_time, updated_at = now()`;
-  }
-}
-
-/** Guarda los 7 días de una persona de una vez (botones rápidos). */
-export async function saveStaffWeek(staffId: number, monday: string, cells: Cell[]) {
-  await requireAuth();
-  if (!ISO_DATE.test(monday) || cells.length !== 7) throw new Error("Semana inválida.");
-  cells.forEach(checkCell);
-  const sql = db();
-  await sql.transaction(
-    cells.map((c, i) => {
-      const date = addDays(monday, i);
-      return c.s === "off"
-        ? sql`delete from shifts where staff_id = ${staffId} and work_date = ${date}`
-        : sql`insert into shifts (staff_id, work_date, status, start_time)
-              values (${staffId}, ${date}, ${c.s}, ${c.s === "from" ? c.t! : null})
-              on conflict (staff_id, work_date)
-              do update set status = excluded.status, start_time = excluded.start_time, updated_at = now()`;
-    }),
-  );
+  await upsertShift(db(), staffId, date, cell);
 }
 
 export async function addStaff(input: StaffInput): Promise<Staff> {
@@ -77,6 +55,26 @@ export async function updateStaff(id: number, input: StaffInput) {
   const p = checkStaffInput(input);
   await db()`update staff set name = ${p.name}, type = ${p.type}, days_off = ${p.daysOff},
     daily_wage = ${p.dailyWage}, pos_name = ${p.posName} where id = ${id}`;
+}
+
+/**
+ * Al cargar las ventas, las semanas completas del archivo quedan fijas: los días que seguían por defecto
+ * se guardan. Así, si después cambian los días libres de alguien, la planilla ya pagada no se mueve.
+ */
+async function freezeDefaults(firstBilled: string, lastBilled: string) {
+  const sql = db();
+  const [{ cutoff }] = (await sql`select coalesce((select value from settings where key = 'cutoff'), '05:00') as cutoff`) as { cutoff: string }[];
+  const first = turnDate(firstBilled.slice(0, 10), firstBilled.slice(11, 16), cutoff);
+  const last = turnDate(lastBilled.slice(0, 10), lastBilled.slice(11, 16), cutoff);
+  // Primera semana que empieza dentro del archivo y última que termina dentro del archivo
+  const from = mondayOf(first) === first ? first : addDays(mondayOf(first), 7);
+  const to = addDays(mondayOf(addDays(last, 1)), -1);
+  if (from > to) return;
+  await sql`insert into shifts (staff_id, work_date, status)
+    select s.id, d::date, case when (extract(isodow from d)::int - 1) = any(s.days_off) then 'off' else 'full' end
+    from staff s cross join generate_series(${from}::date, ${to}::date, interval '1 day') d
+    where s.active and s.type = 'fijo'
+    on conflict (staff_id, work_date) do nothing`;
 }
 
 export type ImportResult =
@@ -108,6 +106,7 @@ export async function importVentas(form: FormData): Promise<ImportResult> {
     ))) as { inserted: boolean }[];
     const added = result.filter((r) => r.inserted).length;
     const dates = rows.map((r) => r.billed_at).sort();
+    await freezeDefaults(dates[0], dates[dates.length - 1]);
     return {
       ok: true,
       total: rows.length,

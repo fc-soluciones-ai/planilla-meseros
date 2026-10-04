@@ -9,7 +9,7 @@ import {
   type Cell, type Settings, type Staff, type StaffType,
 } from "@/lib/turnos";
 import {
-  addStaff, deactivateStaff, importVentas, logout, saveSettings, saveSharedCodes, saveShift, saveStaffWeek, updateStaff,
+  addStaff, deactivateStaff, importVentas, logout, saveSettings, saveSharedCodes, saveShift, updateStaff,
   type ImportResult, type StaffInput,
 } from "./actions";
 
@@ -22,7 +22,7 @@ type Props = {
   tickets: Ticket[];
 };
 type Tab = "staff" | "day" | "tips";
-type Sheet = { kind: "days"; id: number } | { kind: "form"; id: number | null } | { kind: "slip"; id: number } | null;
+type Sheet = { kind: "form"; id: number | null } | { kind: "slip"; id: number } | null;
 
 const GROUPS: { type: StaffType; title: string }[] = [
   { type: "fijo", title: "Meseros fijos" },
@@ -44,6 +44,7 @@ export default function Planilla(props: Props) {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   // Cambia la pantalla de una vez y guarda en segundo plano.
   function persist(fn: () => Promise<unknown>, ok?: string) {
@@ -65,10 +66,7 @@ export default function Planilla(props: Props) {
     setSched((s) => ({ ...s, [id]: s[id].map((c, i) => (i === d ? cell : c)) }));
     persist(() => saveShift(id, dates[d], cell));
   }
-  function setWeek(id: number, cells: Cell[]) {
-    setSched((s) => ({ ...s, [id]: cells }));
-    persist(() => saveStaffWeek(id, monday, cells));
-  }
+
 
   const a = dates[0], b = dates[6];
   const thisWeek = dates.includes(today);
@@ -95,7 +93,7 @@ export default function Planilla(props: Props) {
           {tab === "staff" && (
             <StaffTab staff={staff} sched={sched} dates={dates} today={today} settings={settings}
               onCell={setCell}
-              onEdit={(id) => setSheet({ kind: "days", id })}
+              onEdit={(id) => setSheet({ kind: "form", id })}
               onAdd={() => setSheet({ kind: "form", id: null })} />
           )}
           {tab === "day" && (
@@ -126,18 +124,6 @@ export default function Planilla(props: Props) {
           icon={<><circle cx="12" cy="12" r="9" /><path d="M14.8 9.2c-.5-1-1.6-1.6-2.8-1.6-1.6 0-2.8.9-2.8 2.2 0 3 5.6 1.6 5.6 4.5 0 1.3-1.2 2.2-2.8 2.2-1.3 0-2.4-.6-2.9-1.7M12 6v1.6M12 16.4V18" /></>} />
       </nav>
 
-      {sheet?.kind === "days" && (() => {
-        const p = staff.find((x) => x.id === sheet.id);
-        if (!p) return null;
-        return (
-          <DaysSheet person={p} cells={sched[p.id]} dates={dates} settings={settings}
-            onCell={(d, c) => setCell(p.id, d, c)}
-            onWeek={(cells) => setWeek(p.id, cells)}
-            onEditPerson={() => setSheet({ kind: "form", id: p.id })}
-            onClose={() => setSheet(null)} />
-        );
-      })()}
-
       {sheet?.kind === "form" && (
         <StaffForm
           person={sheet.id ? staff.find((x) => x.id === sheet.id) ?? null : null}
@@ -147,15 +133,15 @@ export default function Planilla(props: Props) {
             if (sheet.id) {
               const id = sheet.id;
               setStaff((s) => s.map((x) => (x.id === id ? { ...x, ...input } : x)));
-              persist(() => updateStaff(id, input), "Datos guardados");
-              setSheet({ kind: "days", id });
+              // recarga la semana para que los días por defecto sigan los días libres nuevos
+              persist(async () => { await updateStaff(id, input); router.refresh(); }, "Datos guardados");
+              setSheet(null);
             } else {
               startTransition(async () => {
                 try {
-                  const p = await addStaff(input);
-                  setStaff((s) => [...s, p]);
-                  setSched((s) => ({ ...s, [p.id]: dates.map(() => ({ s: "off" })) }));
-                  setSheet({ kind: "days", id: p.id });
+                  await addStaff(input);
+                  setSheet(null);
+                  router.refresh(); // trae a la persona con sus días por defecto
                 } catch {
                   setToast({ msg: "No se pudo agregar. Revise la conexión.", err: true });
                 }
@@ -165,7 +151,7 @@ export default function Planilla(props: Props) {
           onRemove={sheet.id ? () => {
             const id = sheet.id!;
             setStaff((s) => s.filter((x) => x.id !== id));
-            persist(() => deactivateStaff(id), "Persona quitada de la lista");
+            persist(async () => { await deactivateStaff(id); router.refresh(); }, "Persona quitada de la lista");
             setSheet(null);
           } : undefined}
         />
@@ -199,38 +185,77 @@ function TabButton({ on, onClick, label, icon }: { on: boolean; onClick: () => v
 type Mode = "day" | "hour";
 
 /**
- * Cuadrícula de la semana: se toca el día para marcarlo, sin abrir otra pantalla.
- * Modo "Día completo": cada toque alterna Libre ↔ Completo.
- * Modo "Hora de entrada": el toque abre el selector del celular para escoger la hora (o Libre / Completo).
+ * Cuadrícula de la semana. Los fijos ya vienen marcados con sus días de siempre: solo se cambia lo distinto.
+ * Fijos: el toque alterna Libre ↔ Completo (o abre la hora, en modo "Hora de entrada").
+ * Ocasionales: el toque siempre abre el selector de hora del celular.
  */
 function StaffTab({ staff, sched, dates, today, settings, onCell, onEdit, onAdd }: {
   staff: Staff[]; sched: Record<number, Cell[]>; dates: string[]; today: string; settings: Settings;
   onCell: (id: number, d: number, c: Cell) => void; onEdit: (id: number) => void; onAdd: () => void;
 }) {
   const [mode, setMode] = useState<Mode>("day");
-  const team = staff.filter((p) => p.type !== "propietario");
+  const fixed = staff.filter((p) => p.type === "fijo");
+  const casual = staff.filter((p) => p.type === "ocasional");
   const owners = staff.filter((p) => p.type === "propietario");
+  const team = [...fixed, ...casual];
   const hours = hourOptions(settings.open);
+
+  const cellFor = (p: Staff, d: number, asPicker: boolean) => {
+    const c = sched[p.id][d];
+    const label = `${p.name}, ${DLONG[d]}: ${c.s === "off" ? "libre" : c.s === "full" ? "completo" : "desde " + c.t}`;
+    const face = c.s === "from" ? c.t!.slice(0, 2) + (c.t!.endsWith(":00") ? "" : "½") : c.s === "full" ? "✓" : asPicker ? "+" : "";
+    if (!asPicker) {
+      return (
+        <button key={d} className={`gcell ${c.s}`} aria-label={label}
+          onClick={() => onCell(p.id, d, c.s === "off" ? { s: "full" } : { s: "off" })}>
+          {face}
+        </button>
+      );
+    }
+    return (
+      <label key={d} className={`gcell ${c.s}${c.s === "off" ? " add" : ""}`} aria-label={label}>
+        {face}
+        <select id={`g-${p.id}-${d}`} value={c.s === "from" ? c.t : c.s}
+          onChange={(e) => {
+            const v = e.target.value;
+            onCell(p.id, d, v === "off" || v === "full" ? { s: v } : { s: "from", t: v });
+          }}>
+          <option value="off">Libre</option>
+          <option value="full">Completo</option>
+          {(c.s === "from" && !hours.includes(c.t!) ? [...hours, c.t!].sort() : hours).map((h) => (
+            <option key={h} value={h}>Desde {h}</option>
+          ))}
+        </select>
+      </label>
+    );
+  };
+
+  const row = (p: Staff, asPicker: boolean) => (
+    <div className="grow" role="row" key={p.id}>
+      <button className="gname" onClick={() => onEdit(p.id)} aria-label={`Editar ${p.name}`}>
+        <span className="gn">{firstName(p.name)}</span>
+      </button>
+      {sched[p.id].map((_, d) => cellFor(p, d, asPicker))}
+    </div>
+  );
 
   return (
     <>
       <h2>¿Quién trabaja esta semana?</h2>
-      {staff.length === 0 ? (
+      {team.length === 0 ? (
         <div className="empty">Todavía no hay meseros. Agregue el primero con el botón de abajo.</div>
       ) : (
         <>
-          <div className="modebar" role="group" aria-label="Qué hace el toque">
-            <span>Al tocar un día:</span>
-            <div className="seg two">
-              <button className={mode === "day" ? "on full" : ""} onClick={() => setMode("day")}>Día completo</button>
-              <button className={mode === "hour" ? "on from" : ""} onClick={() => setMode("hour")}>Hora de entrada</button>
+          <p className="hint">Los fijos ya vienen con sus días de siempre. Cambie solo lo que fue distinto. Se guarda solo.</p>
+          {fixed.length > 0 && (
+            <div className="modebar" role="group" aria-label="Qué hace el toque en los fijos">
+              <span>Fijos, al tocar:</span>
+              <div className="seg two">
+                <button className={mode === "day" ? "on full" : ""} onClick={() => setMode("day")}>Marcar / desmarcar</button>
+                <button className={mode === "hour" ? "on from" : ""} onClick={() => setMode("hour")}>Poner hora</button>
+              </div>
             </div>
-          </div>
-          <p className="hint">
-            {mode === "day"
-              ? "Toque el día para marcarlo o desmarcarlo. Se guarda solo."
-              : "Toque el día y escoja la hora en que entró. También puede escoger Libre o Completo."}
-          </p>
+          )}
 
           <div className="grid" role="table" aria-label="Días trabajados">
             <div className="grow head" role="row">
@@ -241,38 +266,13 @@ function StaffTab({ staff, sched, dates, today, settings, onCell, onEdit, onAdd 
                 </span>
               ))}
             </div>
-            {team.map((p) => (
-              <div className="grow" role="row" key={p.id}>
-                <button className="gname" onClick={() => onEdit(p.id)} aria-label={`Editar ${p.name}`}>
-                  <span className="gn">{firstName(p.name)}</span>
-                </button>
-                {sched[p.id].map((c, d) => {
-                  const label = `${p.name}, ${DLONG[d]}: ${c.s === "off" ? "libre" : c.s === "full" ? "completo" : "desde " + c.t}`;
-                  const face = c.s === "from" ? c.t!.slice(0, 2) + (c.t!.endsWith(":00") ? "" : "½") : c.s === "full" ? "✓" : "";
-                  return mode === "day" ? (
-                    <button key={d} className={`gcell ${c.s}`} aria-label={label}
-                      onClick={() => onCell(p.id, d, c.s === "off" ? { s: "full" } : { s: "off" })}>
-                      {face}
-                    </button>
-                  ) : (
-                    <label key={d} className={`gcell ${c.s}`} aria-label={label}>
-                      {face}
-                      <select id={`g-${p.id}-${d}`} value={c.s === "from" ? c.t : c.s}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          onCell(p.id, d, v === "off" || v === "full" ? { s: v } : { s: "from", t: v });
-                        }}>
-                        <option value="off">Libre</option>
-                        <option value="full">Completo</option>
-                        {(c.s === "from" && !hours.includes(c.t!) ? [...hours, c.t!].sort() : hours).map((h) => (
-                          <option key={h} value={h}>Desde {h}</option>
-                        ))}
-                      </select>
-                    </label>
-                  );
-                })}
-              </div>
-            ))}
+            {fixed.map((p) => row(p, mode === "hour"))}
+            {casual.length > 0 && (
+              <>
+                <div className="gsep" role="row"><span>Ocasionales · toque el día y escoja la hora en que entró</span></div>
+                {casual.map((p) => row(p, true))}
+              </>
+            )}
             <div className="grow foot" role="row">
               <span className="gname">Meseros</span>
               {DAYS.map((_, d) => (
@@ -286,23 +286,23 @@ function StaffTab({ staff, sched, dates, today, settings, onCell, onEdit, onAdd 
             <span><i style={{ background: "var(--part)" }} />Desde la hora (15 = 3 p. m.)</span>
             <span><i style={{ background: "var(--off)" }} />Libre</span>
           </div>
-          <p className="hint" style={{ marginTop: 8 }}>Toque el nombre para usar la semana normal o editar sus datos.</p>
+          <p className="hint" style={{ marginTop: 8 }}>Toque el nombre para editar sus días libres de siempre, el salario o el nombre en el sistema.</p>
+        </>
+      )}
 
-          {owners.length > 0 && (
-            <>
-              <h2>Propietarios</h2>
-              <p className="hint">Su propina entra al reparto del día. No reciben parte ni salario.</p>
-              <div className="list">
-                {owners.map((p) => (
-                  <button key={p.id} className="row" onClick={() => onEdit(p.id)}>
-                    <span className={`avatar ${p.type}`}>{initials(p.name)}</span>
-                    <span className="who"><b>{p.name}</b>{p.posName && <span className="tag">En el sistema: {p.posName}</span>}</span>
-                    <span className="chev">›</span>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+      {owners.length > 0 && (
+        <>
+          <h2>Propietarios</h2>
+          <p className="hint">Su propina entra al reparto del día. No reciben parte ni salario.</p>
+          <div className="list">
+            {owners.map((p) => (
+              <button key={p.id} className="row" onClick={() => onEdit(p.id)}>
+                <span className={`avatar ${p.type}`}>{initials(p.name)}</span>
+                <span className="who"><b>{p.name}</b>{p.posName && <span className="tag">En el sistema: {p.posName}</span>}</span>
+                <span className="chev">›</span>
+              </button>
+            ))}
+          </div>
         </>
       )}
       <button className="addbtn" onClick={onAdd}>+ Agregar persona</button>
@@ -315,62 +315,6 @@ function hourOptions(open: string, current?: string) {
   for (let m = toMin(open); m <= toMin("23:30"); m += 30) out.push(fmt(m));
   if (current && !out.includes(current)) out.push(current);
   return out.sort();
-}
-
-function DaysSheet({ person: p, cells, dates, settings, onCell, onWeek, onEditPerson, onClose }: {
-  person: Staff; cells: Cell[]; dates: string[]; settings: Settings;
-  onCell: (d: number, c: Cell) => void; onWeek: (cells: Cell[]) => void;
-  onEditPerson: () => void; onClose: () => void;
-}) {
-  const quick = (q: "normal" | "finde" | "none") =>
-    onWeek(DAYS.map((_, d): Cell =>
-      q === "none" ? { s: "off" } :
-      q === "finde" ? (d >= 4 ? { s: "full" } : { s: "off" }) :
-      p.daysOff.includes(d) ? { s: "off" } : { s: "full" }));
-
-  return (
-    <>
-      <div className="scrim" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-label={`Días de ${p.name}`}>
-        <div className="grab" />
-        <div className="sheethead">
-          <span className={`avatar ${p.type}`}>{initials(p.name)}</span>
-          <h3>
-            {p.name}
-            <div className="tag">
-              {TYPES[p.type]}{p.daysOff.length > 0 && ` · libres ${p.daysOff.map((d) => DLONG[d]).join(" y ")}`}
-            </div>
-          </h3>
-          <button className="iconbtn" onClick={onClose} aria-label="Cerrar">✕</button>
-        </div>
-        <div className="quick">
-          {p.type === "fijo" && <button className="chip" onClick={() => quick("normal")}>Semana normal</button>}
-          <button className="chip" onClick={() => quick("finde")}>Solo vie–dom</button>
-          <button className="chip" onClick={() => quick("none")}>Toda la semana libre</button>
-        </div>
-        {cells.map((c, d) => (
-          <div className="dayrow" key={d}>
-            <div className="dname">{DAYS[d]}<small>{shortDate(dates[d])}</small></div>
-            <div className="seg" role="group" aria-label={DLONG[d]}>
-              <button className={c.s === "off" ? "on off" : ""} onClick={() => onCell(d, { s: "off" })}>Libre</button>
-              <button className={c.s === "full" ? "on full" : ""} onClick={() => onCell(d, { s: "full" })}>Completo</button>
-              <button className={c.s === "from" ? "on from" : ""} onClick={() => onCell(d, { s: "from", t: c.t ?? "15:00" })}>Desde…</button>
-            </div>
-            {c.s === "from" && (
-              <label className="timepick">
-                Entró a las
-                <select id={`t-${p.id}-${d}`} value={c.t} onChange={(e) => onCell(d, { s: "from", t: e.target.value })}>
-                  {hourOptions(settings.open, c.t).map((h) => <option key={h}>{h}</option>)}
-                </select>
-              </label>
-            )}
-          </div>
-        ))}
-        <button className="primary" onClick={onClose}>Listo</button>
-        <button className="secondary" onClick={onEditPerson}>Editar nombre, tipo o días libres</button>
-      </div>
-    </>
-  );
 }
 
 function StaffForm({ person, busy, onSave, onRemove, onClose }: {

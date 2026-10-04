@@ -91,3 +91,8 @@ export function isPresent(cell: Cell, time: string, cutoff: string): boolean {
 export function todayIn(tz: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
 }
+
+/** Día por defecto: los fijos trabajan todo menos sus días libres; ocasionales y propietarios, libres. */
+export function defaultCell(p: Pick<Staff, "type" | "daysOff">, day: number): Cell {
+  return p.type === "fijo" && !p.daysOff.includes(day) ? { s: "full" } : { s: "off" };
+}
