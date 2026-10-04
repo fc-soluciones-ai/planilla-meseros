@@ -139,6 +139,15 @@ export async function saveSettings(open: string, cutoff: string) {
   ]);
 }
 
+/** Códigos compartidos del sistema (ej. "ELENA"): su propina entra al reparto sin generar aviso. */
+export async function saveSharedCodes(codes: string[]) {
+  await requireAuth();
+  const clean = [...new Set(codes.map((c) => String(c).trim().toUpperCase()).filter(Boolean))];
+  if (clean.length > 50 || clean.some((c) => c.length > 60)) throw new Error("Códigos inválidos.");
+  await db()`insert into settings (key, value) values ('shared_codes', ${JSON.stringify(clean)})
+             on conflict (key) do update set value = excluded.value`;
+}
+
 export async function login(_prev: string | null, form: FormData): Promise<string | null> {
   if (!process.env.APP_PASSWORD) return "Falta configurar APP_PASSWORD en Vercel.";
   const ok = await startSession(String(form.get("password") ?? ""));

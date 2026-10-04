@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
-import { calcWeek, weekWarnings, type Ticket } from "@/lib/reparto";
+import { calcWeek, norm, sharedTotals, weekWarnings, type Ticket } from "@/lib/reparto";
 import {
   DAYS, DLONG, TYPES, addDays, fmt, isPresent, opMin, shortDate, toMin, weekDates,
   type Cell, type Settings, type Staff, type StaffType,
 } from "@/lib/turnos";
 import {
-  addStaff, deactivateStaff, importVentas, logout, saveSettings, saveShift, saveStaffWeek, updateStaff,
+  addStaff, deactivateStaff, importVentas, logout, saveSettings, saveSharedCodes, saveShift, saveStaffWeek, updateStaff,
   type ImportResult, type StaffInput,
 } from "./actions";
 
@@ -93,7 +93,8 @@ export default function Planilla(props: Props) {
 
         <main>
           {tab === "staff" && (
-            <StaffTab staff={staff} sched={sched}
+            <StaffTab staff={staff} sched={sched} dates={dates} today={today} settings={settings}
+              onCell={setCell}
               onEdit={(id) => setSheet({ kind: "days", id })}
               onAdd={() => setSheet({ kind: "form", id: null })} />
           )}
@@ -104,6 +105,10 @@ export default function Planilla(props: Props) {
             <TipsTab monday={monday} dates={dates} staff={staff} sched={sched} tickets={props.tickets}
               settings={settings}
               onSlip={(id) => setSheet({ kind: "slip", id })}
+              onSharedCodes={(codes) => {
+                setSettings((s) => ({ ...s, sharedCodes: codes }));
+                persist(() => saveSharedCodes(codes), "Guardado");
+              }}
               onChange={(s) => {
                 setSettings(s);
                 persist(() => saveSettings(s.open, s.cutoff), "Horario guardado");
@@ -191,52 +196,116 @@ function TabButton({ on, onClick, label, icon }: { on: boolean; onClick: () => v
   );
 }
 
-function Dots({ cells }: { cells: Cell[] }) {
-  return (
-    <span className="dots">
-      {cells.map((c, d) => (
-        <span key={d} className={`dot ${c.s}`} title={DLONG[d]}>
-          {c.s === "from" ? c.t!.slice(0, 2) : DAYS[d][0]}
-        </span>
-      ))}
-    </span>
-  );
-}
+type Mode = "day" | "hour";
 
-function StaffTab({ staff, sched, onEdit, onAdd }: {
-  staff: Staff[]; sched: Record<number, Cell[]>; onEdit: (id: number) => void; onAdd: () => void;
+/**
+ * Cuadrícula de la semana: se toca el día para marcarlo, sin abrir otra pantalla.
+ * Modo "Día completo": cada toque alterna Libre ↔ Completo.
+ * Modo "Hora de entrada": el toque abre el selector del celular para escoger la hora (o Libre / Completo).
+ */
+function StaffTab({ staff, sched, dates, today, settings, onCell, onEdit, onAdd }: {
+  staff: Staff[]; sched: Record<number, Cell[]>; dates: string[]; today: string; settings: Settings;
+  onCell: (id: number, d: number, c: Cell) => void; onEdit: (id: number) => void; onAdd: () => void;
 }) {
+  const [mode, setMode] = useState<Mode>("day");
+  const team = staff.filter((p) => p.type !== "propietario");
+  const owners = staff.filter((p) => p.type === "propietario");
+  const hours = hourOptions(settings.open);
+
   return (
     <>
       <h2>¿Quién trabaja esta semana?</h2>
-      <p className="hint">Toque a una persona para marcar sus días. Si no trabajó el día completo, ponga la hora en que entró.</p>
-      {staff.length === 0 && (
+      {staff.length === 0 ? (
         <div className="empty">Todavía no hay meseros. Agregue el primero con el botón de abajo.</div>
-      )}
-      {GROUPS.map(({ type, title }) => {
-        const ps = staff.filter((p) => p.type === type);
-        if (!ps.length) return null;
-        return (
-          <section key={type}>
-            <h2>{title}</h2>
-            <div className="list">
-              {ps.map((p) => (
-                <button key={p.id} className="row" onClick={() => onEdit(p.id)}>
-                  <span className={`avatar ${p.type}`}>{initials(p.name)}</span>
-                  <span className="who"><b>{p.name}</b><Dots cells={sched[p.id]} /></span>
-                  <span className="chev">›</span>
-                </button>
+      ) : (
+        <>
+          <div className="modebar" role="group" aria-label="Qué hace el toque">
+            <span>Al tocar un día:</span>
+            <div className="seg two">
+              <button className={mode === "day" ? "on full" : ""} onClick={() => setMode("day")}>Día completo</button>
+              <button className={mode === "hour" ? "on from" : ""} onClick={() => setMode("hour")}>Hora de entrada</button>
+            </div>
+          </div>
+          <p className="hint">
+            {mode === "day"
+              ? "Toque el día para marcarlo o desmarcarlo. Se guarda solo."
+              : "Toque el día y escoja la hora en que entró. También puede escoger Libre o Completo."}
+          </p>
+
+          <div className="grid" role="table" aria-label="Días trabajados">
+            <div className="grow head" role="row">
+              <span className="gname" />
+              {DAYS.map((n, d) => (
+                <span key={d} className={`ghead${dates[d] === today ? " today" : ""}`} role="columnheader">
+                  {n.slice(0, 1)}<small>{dates[d].slice(8).replace(/^0/, "")}</small>
+                </span>
               ))}
             </div>
-          </section>
-        );
-      })}
+            {team.map((p) => (
+              <div className="grow" role="row" key={p.id}>
+                <button className="gname" onClick={() => onEdit(p.id)} aria-label={`Editar ${p.name}`}>
+                  <span className="gn">{firstName(p.name)}</span>
+                </button>
+                {sched[p.id].map((c, d) => {
+                  const label = `${p.name}, ${DLONG[d]}: ${c.s === "off" ? "libre" : c.s === "full" ? "completo" : "desde " + c.t}`;
+                  const face = c.s === "from" ? c.t!.slice(0, 2) + (c.t!.endsWith(":00") ? "" : "½") : c.s === "full" ? "✓" : "";
+                  return mode === "day" ? (
+                    <button key={d} className={`gcell ${c.s}`} aria-label={label}
+                      onClick={() => onCell(p.id, d, c.s === "off" ? { s: "full" } : { s: "off" })}>
+                      {face}
+                    </button>
+                  ) : (
+                    <label key={d} className={`gcell ${c.s}`} aria-label={label}>
+                      {face}
+                      <select id={`g-${p.id}-${d}`} value={c.s === "from" ? c.t : c.s}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          onCell(p.id, d, v === "off" || v === "full" ? { s: v } : { s: "from", t: v });
+                        }}>
+                        <option value="off">Libre</option>
+                        <option value="full">Completo</option>
+                        {(c.s === "from" && !hours.includes(c.t!) ? [...hours, c.t!].sort() : hours).map((h) => (
+                          <option key={h} value={h}>Desde {h}</option>
+                        ))}
+                      </select>
+                    </label>
+                  );
+                })}
+              </div>
+            ))}
+            <div className="grow foot" role="row">
+              <span className="gname">Meseros</span>
+              {DAYS.map((_, d) => (
+                <span key={d} className="gcount">{team.filter((p) => sched[p.id][d].s !== "off").length}</span>
+              ))}
+            </div>
+          </div>
+
+          <div className="legend">
+            <span><i style={{ background: "var(--accent)" }} />Completo</span>
+            <span><i style={{ background: "var(--part)" }} />Desde la hora (15 = 3 p. m.)</span>
+            <span><i style={{ background: "var(--off)" }} />Libre</span>
+          </div>
+          <p className="hint" style={{ marginTop: 8 }}>Toque el nombre para usar la semana normal o editar sus datos.</p>
+
+          {owners.length > 0 && (
+            <>
+              <h2>Propietarios</h2>
+              <p className="hint">Su propina entra al reparto del día. No reciben parte ni salario.</p>
+              <div className="list">
+                {owners.map((p) => (
+                  <button key={p.id} className="row" onClick={() => onEdit(p.id)}>
+                    <span className={`avatar ${p.type}`}>{initials(p.name)}</span>
+                    <span className="who"><b>{p.name}</b>{p.posName && <span className="tag">En el sistema: {p.posName}</span>}</span>
+                    <span className="chev">›</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
       <button className="addbtn" onClick={onAdd}>+ Agregar persona</button>
-      <div className="legend">
-        <span><i style={{ background: "var(--accent)" }} />Día completo</span>
-        <span><i style={{ background: "var(--part)" }} />Entró a la hora indicada</span>
-        <span><i style={{ background: "var(--off)" }} />Libre</span>
-      </div>
     </>
   );
 }
@@ -435,9 +504,10 @@ function DayTab({ staff, sched, settings, dates, day, setDay }: {
   );
 }
 
-function TipsTab({ monday, dates, staff, sched, tickets, settings, onSlip, onChange }: {
+function TipsTab({ monday, dates, staff, sched, tickets, settings, onSlip, onSharedCodes, onChange }: {
   monday: string; dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>; tickets: Ticket[];
-  settings: Settings; onSlip: (id: number) => void; onChange: (s: Settings) => void;
+  settings: Settings; onSlip: (id: number) => void; onSharedCodes: (codes: string[]) => void;
+  onChange: (s: Settings) => void;
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -445,7 +515,8 @@ function TipsTab({ monday, dates, staff, sched, tickets, settings, onSlip, onCha
   const [result, setResult] = useState<ImportResult | null>(null);
 
   const { days, people } = calcWeek(dates, staff, sched, tickets, settings.cutoff);
-  const warnings = weekWarnings(dates, staff, sched, tickets, settings.cutoff, days);
+  const warnings = weekWarnings(dates, staff, sched, tickets, settings.cutoff, days, settings.sharedCodes);
+  const shared = sharedTotals(dates, tickets, settings.cutoff, settings.sharedCodes);
   const totalTips = days.reduce((a, d) => a + d.total, 0);
   const paid = people.filter((p) => p.total > 0);
   const sum = (k: "salary" | "tip" | "total") => paid.reduce((a, p) => a + p[k], 0);
@@ -512,7 +583,31 @@ function TipsTab({ monday, dates, staff, sched, tickets, settings, onSlip, onCha
         <>
           <h2>Para revisar</h2>
           <div className="warns">
-            {warnings.map((w, i) => <p key={i} className={`warnrow ${w.level}`}>{w.text}</p>)}
+            {warnings.map((w, i) => (
+              <div key={i} className={`warnrow ${w.level}`}>
+                <p>{w.text}</p>
+                {w.code && (
+                  <button className="chip" onClick={() => onSharedCodes([...settings.sharedCodes, norm(w.code!)])}>
+                    {w.code} es código compartido
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {settings.sharedCodes.length > 0 && (
+        <>
+          <h2>Códigos compartidos</h2>
+          <p className="hint">Los usa el equipo. Su propina entra al reparto del día entre quienes trabajaron.</p>
+          <div className="quick">
+            {settings.sharedCodes.map((c) => (
+              <button key={c} className="chip" aria-label={`Quitar ${c}`}
+                onClick={() => onSharedCodes(settings.sharedCodes.filter((x) => x !== c))}>
+                {c}{shared.get(c) ? ` · ${money(shared.get(c)!)}` : ""} ✕
+              </button>
+            ))}
           </div>
         </>
       )}

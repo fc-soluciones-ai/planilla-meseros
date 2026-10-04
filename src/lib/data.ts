@@ -17,7 +17,11 @@ async function queryWeek(monday: string) {
   const sunday = addDays(monday, 6);
   const settingRows = (await sql`select key, value from settings`) as SettingRow[];
   const s = Object.fromEntries(settingRows.map((r) => [r.key, r.value]));
-  const settings: Settings = { open: s.open ?? "07:00", cutoff: s.cutoff ?? "05:00" };
+  const settings: Settings = {
+    open: s.open ?? "07:00",
+    cutoff: s.cutoff ?? "05:00",
+    sharedCodes: parseCodes(s.shared_codes),
+  };
 
   // Cuentas del lunes a la hora de corte hasta el lunes siguiente a la hora de corte:
   // la madrugada del lunes es del domingo anterior y la del lunes siguiente es de este domingo.
@@ -61,4 +65,13 @@ async function queryWeek(monday: string) {
   }));
 
   return { staff, sched, settings, tickets };
+}
+
+function parseCodes(v: string | undefined): string[] {
+  try {
+    const x = JSON.parse(v ?? "[]");
+    return Array.isArray(x) ? x.filter((c): c is string => typeof c === "string") : [];
+  } catch {
+    return [];
+  }
 }

@@ -17,7 +17,7 @@ export type PersonCalc = {
   tip: number;
   total: number;
 };
-export type Warning = { level: "warn" | "info"; text: string };
+export type Warning = { level: "warn" | "info"; text: string; code?: string };
 
 /** Los propietarios facturan y su propina entra al reparto, pero no reciben parte ni salario. */
 export const sharesTips = (p: Staff) => p.type !== "propietario";
@@ -72,7 +72,9 @@ export function calcWeek(
 /** Avisos para revisar antes de pagar: lo que no encaja entre el archivo y lo marcado. */
 export function weekWarnings(
   dates: string[], staff: Staff[], sched: Record<number, Cell[]>, tickets: Ticket[], cutoff: string, days: DayCalc[],
+  sharedCodes: string[] = [],
 ): Warning[] {
+  const shared = new Set(sharedCodes.map(norm));
   const out: Warning[] = [];
   const byKey = new Map(staff.map((p) => [posKey(p), p]));
   const unknown = new Map<string, number>();
@@ -82,7 +84,10 @@ export function weekWarnings(
     const d = dates.indexOf(turnDate(t.date, t.time, cutoff));
     if (d < 0) continue;
     const p = byKey.get(norm(t.waiter));
-    if (!p) { unknown.set(t.waiter, (unknown.get(t.waiter) ?? 0) + t.tip); continue; }
+    if (!p) {
+      if (!shared.has(norm(t.waiter))) unknown.set(t.waiter, (unknown.get(t.waiter) ?? 0) + t.tip);
+      continue;
+    }
     if (!sharesTips(p)) continue;
     const cell = sched[p.id][d];
     const key = `${p.id}-${d}`;
@@ -101,7 +106,19 @@ export function weekWarnings(
     }
   });
   for (const [w, tip] of unknown) {
-    out.push({ level: "info", text: `${w} facturó ₡${Math.round(tip).toLocaleString("en-US")} de propina y no está en la planilla. Su propina sí entra al reparto del día. Si es del equipo o propietario, escriba "${w}" como nombre en el sistema de esa persona.` });
+    out.push({ level: "info", code: w, text: `${w} facturó ₡${Math.round(tip).toLocaleString("en-US")} de propina y no está en la planilla. Su propina sí entra al reparto del día. Si es del equipo o propietario, escriba "${w}" como nombre en el sistema de esa persona. Si es un código que usan otros, márquelo como compartido.` });
+  }
+  return out;
+}
+
+/** Propina de la semana por código compartido, para mostrarla aparte. */
+export function sharedTotals(dates: string[], tickets: Ticket[], cutoff: string, sharedCodes: string[]) {
+  const shared = new Set(sharedCodes.map(norm));
+  const out = new Map<string, number>();
+  for (const t of tickets) {
+    const k = norm(t.waiter);
+    if (!shared.has(k) || !dates.includes(turnDate(t.date, t.time, cutoff))) continue;
+    out.set(k, (out.get(k) ?? 0) + t.tip);
   }
   return out;
 }
