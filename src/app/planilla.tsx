@@ -7,7 +7,7 @@ import InstallButton from "./install-button";
 import { calcWeek, weekWarnings, type PersonCalc, type Ticket } from "@/lib/reparto";
 import { shareFiles, slipImage, type SlipData } from "@/lib/boleta";
 import {
-  DAYS, DLONG, TYPES, addDays, fmt, isPresent, opMin, shortDate, toMin, weekDates,
+  DAYS, DLONG, TYPES, addDays, fmt, shortDate, toMin, weekDates,
   type Cell, type Settings, type Staff, type StaffType,
 } from "@/lib/turnos";
 import {
@@ -27,7 +27,7 @@ type Props = {
   users: AppUser[];
   me: Session;
 };
-type Tab = "staff" | "day" | "tips" | "config";
+type Tab = "staff" | "tips" | "config";
 type Sheet = { kind: "form"; id: number | null } | { kind: "slip"; id: number } | null;
 
 const GROUPS: { type: StaffType; title: string }[] = [
@@ -67,7 +67,6 @@ export default function Planilla(props: Props) {
   const [sched, setSched] = useState(props.sched);
   const [settings, setSettings] = useState(props.settings);
   const [tab, setTab] = useState<Tab>("staff");
-  const [day, setDay] = useState(() => Math.max(0, dates.indexOf(today)));
   const [sheet, setSheet] = useState<Sheet>(null);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -109,14 +108,16 @@ export default function Planilla(props: Props) {
               <h1>Planilla de meseros</h1>
             </span>
           </div>
-          <div className="weeknav">
-            <Link className="iconbtn" href={`/?semana=${addDays(monday, -7)}`} aria-label="Semana anterior">‹</Link>
-            <div className="lbl">
-              <span>Semana {shortDate(a).split(" ")[0]} – {shortDate(b)} {b.slice(0, 4)}</span>
-              {!thisWeek && <Link href="/">Ir a esta semana</Link>}
+          {tab !== "config" && (
+            <div className="weeknav">
+              <Link className="iconbtn" href={`/?semana=${addDays(monday, -7)}`} aria-label="Semana anterior">‹</Link>
+              <div className="lbl">
+                <span>Semana {shortDate(a).split(" ")[0]} – {shortDate(b)} {b.slice(0, 4)}</span>
+                {!thisWeek && <Link href="/">Ir a esta semana</Link>}
+              </div>
+              <Link className="iconbtn" href={`/?semana=${addDays(monday, 7)}`} aria-label="Semana siguiente">›</Link>
             </div>
-            <Link className="iconbtn" href={`/?semana=${addDays(monday, 7)}`} aria-label="Semana siguiente">›</Link>
-          </div>
+          )}
           <InstallButton />
         </header>
 
@@ -124,11 +125,7 @@ export default function Planilla(props: Props) {
           {tab === "staff" && (
             <StaffTab staff={staff} sched={sched} dates={dates} today={today} settings={settings}
               onCell={setCell}
-              onEdit={(id) => setSheet({ kind: "form", id })}
-              onAdd={() => setSheet({ kind: "form", id: null })} />
-          )}
-          {tab === "day" && (
-            <DayTab staff={staff} sched={sched} settings={settings} dates={dates} day={day} setDay={setDay} />
+              onGoConfig={() => setTab("config")} />
           )}
           {tab === "tips" && (
             <TipsTab restaurant={settings.restaurant || props.settings.restaurant} dates={dates} staff={staff} sched={sched} tickets={props.tickets}
@@ -137,7 +134,9 @@ export default function Planilla(props: Props) {
  />
           )}
           {tab === "config" && (
-            <ConfigTab users={props.users} me={props.me}
+            <ConfigTab users={props.users} me={props.me} staff={staff}
+              onEdit={(id) => setSheet({ kind: "form", id })}
+              onAdd={() => setSheet({ kind: "form", id: null })}
               settings={{ ...settings, restaurant: settings.restaurant || props.settings.restaurant }}
               onRestaurant={(name) => {
                 setSettings((s) => ({ ...s, restaurant: name.trim() }));
@@ -154,8 +153,6 @@ export default function Planilla(props: Props) {
       <nav className="tabs">
         <TabButton on={tab === "staff"} onClick={() => setTab("staff")} label="Meseros"
           icon={<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5" /><circle cx="17.5" cy="9" r="2.5" /><path d="M16 14.6c2.6-.3 4.8 1.4 5.5 4.4" /></>} />
-        <TabButton on={tab === "day"} onClick={() => setTab("day")} label="Día"
-          icon={<><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></>} />
         <TabButton on={tab === "tips"} onClick={() => setTab("tips")} label="Propinas"
           icon={<><circle cx="12" cy="12" r="9" /><path d="M14.8 9.2c-.5-1-1.6-1.6-2.8-1.6-1.6 0-2.8.9-2.8 2.2 0 3 5.6 1.6 5.6 4.5 0 1.3-1.2 2.2-2.8 2.2-1.3 0-2.4-.6-2.9-1.7M12 6v1.6M12 16.4V18" /></>} />
         <TabButton on={tab === "config"} onClick={() => setTab("config")} label="Configuración"
@@ -227,14 +224,13 @@ type Mode = "day" | "hour";
  * Fijos: el toque alterna Libre ↔ Completo (o abre la hora, en modo "Hora de entrada").
  * Ocasionales: el toque siempre abre el selector de hora del celular.
  */
-function StaffTab({ staff, sched, dates, today, settings, onCell, onEdit, onAdd }: {
+function StaffTab({ staff, sched, dates, today, settings, onCell, onGoConfig }: {
   staff: Staff[]; sched: Record<number, Cell[]>; dates: string[]; today: string; settings: Settings;
-  onCell: (id: number, d: number, c: Cell) => void; onEdit: (id: number) => void; onAdd: () => void;
+  onCell: (id: number, d: number, c: Cell) => void; onGoConfig: () => void;
 }) {
   const [mode, setMode] = useState<Mode>("day");
   const fixed = staff.filter((p) => p.type === "fijo");
   const casual = staff.filter((p) => p.type === "ocasional");
-  const owners = staff.filter((p) => p.type === "propietario");
   const team = [...fixed, ...casual];
   const hours = hourOptions(settings.open);
 
@@ -270,9 +266,7 @@ function StaffTab({ staff, sched, dates, today, settings, onCell, onEdit, onAdd 
 
   const row = (p: Staff, asPicker: boolean) => (
     <div className="grow" role="row" key={p.id}>
-      <button className="gname" onClick={() => onEdit(p.id)} aria-label={`Editar ${p.name}`}>
-        <span className="gn">{firstName(p.name)}</span>
-      </button>
+      <span className="gname"><span className="gn">{firstName(p.name)}</span></span>
       {sched[p.id].map((_, d) => cellFor(p, d, asPicker))}
     </div>
   );
@@ -281,7 +275,9 @@ function StaffTab({ staff, sched, dates, today, settings, onCell, onEdit, onAdd 
     <>
       <h2>¿Quién trabaja esta semana?</h2>
       {team.length === 0 ? (
-        <div className="empty">Todavía no hay meseros. Agregue el primero con el botón de abajo.</div>
+        <div className="empty">
+          Todavía no hay meseros. <button className="link inline-link" onClick={onGoConfig}>Agréguelos en Configuración</button>.
+        </div>
       ) : (
         <>
           <p className="hint">Los fijos ya vienen con sus días de siempre. Cambie solo lo que fue distinto. Se guarda solo.</p>
@@ -324,26 +320,12 @@ function StaffTab({ staff, sched, dates, today, settings, onCell, onEdit, onAdd 
             <span><i style={{ background: "var(--part)" }} />Desde la hora (15 = 3 p. m.)</span>
             <span><i style={{ background: "var(--off)" }} />Libre</span>
           </div>
-          <p className="hint" style={{ marginTop: 8 }}>Toque el nombre para editar sus días libres de siempre o el salario.</p>
-        </>
+          <p className="hint" style={{ marginTop: 8 }}>
+            Para agregar meseros o cambiar sus días libres, vaya a{" "}
+            <button className="link inline-link" onClick={onGoConfig}>Configuración</button>.
+          </p>        </>
       )}
 
-      {owners.length > 0 && (
-        <>
-          <h2>Propietarios</h2>
-          <p className="hint">Su propina entra al reparto del día. No reciben parte ni salario.</p>
-          <div className="list">
-            {owners.map((p) => (
-              <button key={p.id} className="row" onClick={() => onEdit(p.id)}>
-                <span className={`avatar ${p.type}`}>{initials(p.name)}</span>
-                <span className="who"><b>{p.name}</b></span>
-                <span className="chev">›</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-      <button className="addbtn" onClick={onAdd}>+ Agregar persona</button>
     </>
   );
 }
@@ -412,70 +394,6 @@ function StaffForm({ person, busy, onSave, onRemove, onClose }: {
           ? <button type="button" className="secondary danger" onClick={onRemove}>Sí, quitar a {firstName(person!.name)}</button>
           : <button type="button" className="secondary danger" onClick={() => setConfirm(true)}>Quitar de la lista</button>)}
       </form>
-    </>
-  );
-}
-
-function DayPicker({ dates, day, setDay }: { dates: string[]; day: number; setDay: (d: number) => void }) {
-  return (
-    <div className="daypick">
-      {DAYS.map((n, d) => (
-        <button key={d} className={d === day ? "sel" : ""} onClick={() => setDay(d)}>
-          {n}<small>{dates[d].slice(8).replace(/^0/, "")}</small>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function DayTab({ staff, sched, settings, dates, day, setDay }: {
-  staff: Staff[]; sched: Record<number, Cell[]>; settings: Settings; dates: string[]; day: number; setDay: (d: number) => void;
-}) {
-  const start = toMin(settings.open);
-  const end = toMin(settings.cutoff) + 1440;
-  const pct = (m: number) => `${(((m - start) / (end - start)) * 100).toFixed(2)}%`;
-  const working = staff.filter((p) => sched[p.id][day].s !== "off");
-  const next = addDays(dates[day], 1);
-  const ticks = [start, toMin("11:00"), toMin("15:00"), toMin("19:00"), 1440, end].filter((m) => m >= start && m <= end);
-  const countAt = (t: string) => staff.filter((p) => isPresent(sched[p.id][day], t, settings.cutoff)).length;
-
-  return (
-    <>
-      <h2>Turno del {DLONG[day]} {shortDate(dates[day])}</h2>
-      <DayPicker dates={dates} day={day} setDay={setDay} />
-      <div className="turnbox">
-        El turno abre el <b>{DLONG[day]} {settings.open}</b> y cierra el{" "}
-        <b>{DLONG[(day + 1) % 7]} {shortDate(next)} {fmt(toMin(settings.cutoff) - 1)}</b>.
-        Todo lo facturado en ese rango, incluida la madrugada, suma a este día.
-      </div>
-      <h2>Quién estuvo y desde qué hora</h2>
-      <div className="tl">
-        <div className="tlgrid">
-          {working.length === 0 && <p className="hint">Nadie marcado para este día. Márquelo en la pestaña Meseros.</p>}
-          {working.map((p) => {
-            const c = sched[p.id][day];
-            const from = c.s === "full" ? start : opMin(c.t!, settings.cutoff);
-            return (
-              <div className="tlrow" key={p.id}>
-                <span className="nm">{firstName(p.name)}</span>
-                <div className="track">
-                  <div className={`bar ${c.s}`} style={{ left: pct(from) }} />
-                  <div className="midnight" style={{ left: pct(1440) }} />
-                </div>
-              </div>
-            );
-          })}
-          <div className="axis">
-            <span />
-            <div>{ticks.map((m) => <span key={m} style={{ left: pct(m) }}>{m === 1440 ? "00:00" : fmt(m)}</span>)}</div>
-          </div>
-        </div>
-      </div>
-      <div className="count">
-        {([["11:00", "Mediodía"], ["15:00", "Tarde"], ["20:00", "Noche"], ["01:00", "Madrugada"]] as const).map(([t, l]) => (
-          <span key={t} className={`pill${t === "01:00" ? " p" : ""}`}>{l} {t}: {countAt(t)} personas</span>
-        ))}
-      </div>
     </>
   );
 }
@@ -688,9 +606,10 @@ function SlipSheet({ id, dates, staff, sched, tickets, settings, restaurant, onN
   );
 }
 
-function ConfigTab({ users, me, settings, onSettings, onRestaurant }: {
-  users: AppUser[]; me: Session; settings: Settings; onSettings: (s: Settings) => void;
-  onRestaurant: (name: string) => void;
+function ConfigTab({ users, me, staff, settings, onEdit, onAdd, onSettings, onRestaurant }: {
+  users: AppUser[]; me: Session; staff: Staff[]; settings: Settings;
+  onEdit: (id: number) => void; onAdd: () => void;
+  onSettings: (s: Settings) => void; onRestaurant: (name: string) => void;
 }) {
   const router = useRouter();
   const [busy, start] = useTransition();
@@ -717,6 +636,27 @@ function ConfigTab({ users, me, settings, onSettings, onRestaurant }: {
 
   return (
     <>
+      <h2>Meseros</h2>
+      <p className="hint">Toque a una persona para cambiar su nombre, tipo, días libres o salario.</p>
+      <div className="list">
+        {staff.length === 0 && <div className="empty">Todavía no hay meseros.</div>}
+        {GROUPS.map(({ type }) => staff.filter((p) => p.type === type).map((p) => (
+          <button key={p.id} className="row" onClick={() => onEdit(p.id)}>
+            <span className={`avatar ${p.type}`}>{initials(p.name)}</span>
+            <span className="who">
+              <b>{p.name}</b>
+              <span className="tag">
+                {TYPES[p.type]}
+                {p.type === "fijo" && (p.daysOff.length ? ` · libres ${p.daysOff.map((d) => DAYS[d]).join(", ")}` : " · sin días libres")}
+                {p.type !== "propietario" && ` · ${money(p.dailyWage)}/día`}
+              </span>
+            </span>
+            <span className="chev">›</span>
+          </button>
+        )))}
+      </div>
+      <button className="addbtn" onClick={onAdd}>+ Agregar mesero</button>
+
       <h2>Usuarios</h2>
       <p className="hint">Personas que pueden entrar a la app con su propio usuario y contraseña.</p>
       <div className="list">

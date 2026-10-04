@@ -84,33 +84,12 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 17px; margin: 1
 fieldset.field { border: 0; padding: 0 }
 fieldset.field legend { padding: 0; margin-bottom: 6px }
 
-.daypick { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 4px }
-.daypick button { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 10px; padding: 6px 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; font-weight: 700 }
-.daypick button small { font-weight: 500; color: var(--muted); font-size: 11px }
-.daypick button.sel { background: var(--ink); color: var(--bg); border-color: var(--ink) }
-.daypick button.sel small { color: var(--bg); opacity: .75 }
-.turnbox { background: var(--night-soft); color: var(--ink); border-radius: 12px; padding: 12px; font-size: 13px; margin-top: 12px }
-.turnbox b { font-family: var(--f-mono); color: var(--night) }
-.tl { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; overflow-x: auto }
-.tlgrid { position: relative; min-width: 330px }
-.tlrow { display: grid; grid-template-columns: 78px 1fr; align-items: center; gap: 8px; height: 30px }
-.tlrow .nm { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.track { position: relative; height: 16px; background: var(--bg); border-radius: 4px }
-.bar { position: absolute; top: 0; bottom: 0; right: 0; border-radius: 4px; background: var(--accent) }
-.bar.from { background: var(--part) }
-.midnight { position: absolute; top: 0; bottom: 0; border-left: 1.5px dashed var(--night) }
-.axis { display: grid; grid-template-columns: 78px 1fr; gap: 8px; font-family: var(--f-mono); font-size: 10px; color: var(--muted) }
-.axis div { position: relative; height: 14px }
-.axis span { position: absolute; transform: translateX(-50%) }
-.count { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px }
-.pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600 }
-.pill.p { background: var(--night-soft); color: var(--night) }
 
 .rule { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 14px }
 .rule p { margin: 0 }
 .cfg { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
 
-nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--card); border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)) }
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--card); border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(3, 1fr); padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)) }
 nav.tabs button { border: 0; background: transparent; color: var(--muted); padding: 8px 0; font-weight: 600; font-size: 12px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; border-radius: 10px }
 nav.tabs button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8 }
 nav.tabs button.on { color: var(--accent); background: var(--accent-soft) }
@@ -192,3 +171,5 @@ label.gcell:focus-within { outline: 2px solid var(--accent); outline-offset: 2px
 .slipview img { width: 100%; max-width: 420px; height: auto; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12) }
 .slipwait { color: var(--muted); font-size: 14px }
 .iconbtn:disabled { opacity: .4 }
+.link.inline-link { padding: 0; color: var(--accent); font-size: inherit; text-decoration: underline; font-weight: 600 }
+.grow .gname { cursor: default }
