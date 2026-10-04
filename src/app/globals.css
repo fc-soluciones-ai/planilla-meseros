@@ -1,9 +1,9 @@
 /* App de una columna para celular: barra inferior con 3 pestañas y hojas que suben desde abajo */
 :root {
   --bg: #f3f1ec; --card: #ffffff; --ink: #1f2420; --muted: #6b706a; --line: #e2dfd6;
-  --accent: #1f5a46; --accent-ink: #ffffff; --accent-soft: #dcebe3;
+  --accent: #c62828; --accent-ink: #ffffff; --accent-soft: #fbe3e3;
   --part: #c98a1b; --part-ink: #ffffff; --part-soft: #f6e7c8; --off: #d9d6cd;
-  --night: #2d3561; --night-soft: #e0e3f3; --danger: #b3261e;
+  --night: #2d3561; --night-soft: #e0e3f3; --danger: #8c1d18;
   --f-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
   --f-body: var(--font-body), ui-sans-serif, system-ui, sans-serif;
   --f-mono: var(--font-mono), ui-monospace, Menlo, monospace;
@@ -11,10 +11,10 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #141714; --card: #1d211d; --ink: #ecefe9; --muted: #9ba29a; --line: #2d332d;
-    --accent: #4fb08b; --accent-ink: #0d1a14; --accent-soft: #1f3a2f;
-    --part: #e3a940; --part-ink: #1d1404; --part-soft: #3b301a; --off: #3a3f3a;
-    --night: #a6b0ec; --night-soft: #262b45; --danger: #ff8a80;
+    --bg: #171414; --card: #211c1c; --ink: #efeaea; --muted: #a59d9c; --line: #352d2d;
+    --accent: #e5484d; --accent-ink: #ffffff; --accent-soft: #42201f;
+    --part: #e3a940; --part-ink: #1d1404; --part-soft: #3b301a; --off: #3e3737;
+    --night: #a6b0ec; --night-soft: #262b45; --danger: #ffb4ab;
     color-scheme: dark;
   }
 }

@@ -12,7 +12,7 @@ export type SlipData = {
 };
 
 // Colores fijos: la imagen se ve igual en cualquier teléfono, con o sin modo oscuro
-const C = { bg: "#ffffff", ink: "#1f2420", muted: "#6b706a", line: "#e2dfd6", accent: "#1f5a46", soft: "#dcebe3", band: "#1f5a46" };
+const C = { bg: "#ffffff", ink: "#1f2420", muted: "#6b706a", line: "#e2dfd6", accent: "#b71c1c", soft: "#fde4e4", band: "#c62828" };
 
 const money = (n: number) => "₡" + Math.round(n).toLocaleString("en-US");
 
