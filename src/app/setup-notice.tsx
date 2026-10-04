@@ -7,6 +7,8 @@ const HELP: Record<string, string> = {
 export default function SetupNotice({ missing, error }: { missing?: string[]; error?: string }) {
   return (
     <div className="app login">
+      {/* eslint-disable-next-line @next/next/no-img-element -- SVG vectorial */}
+      <img src="/logo.svg" alt="D'charly's Chicharronera" className="login-logo" width={200} height={168} />
       <h1>Planilla de meseros</h1>
       {missing && missing.length > 0 ? (
         <>

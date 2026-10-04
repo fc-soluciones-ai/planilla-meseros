@@ -24,9 +24,22 @@ function fonts() {
   return { body: `${body}, system-ui, sans-serif`, display: `${display}, ${body}, sans-serif`, mono: `${mono}, monospace` };
 }
 
+let logo: Promise<HTMLImageElement | null> | null = null;
+/** Logo del restaurante (vectorial). Si no carga, la boleta sale sin él. */
+function loadLogo() {
+  logo ??= new Promise((ok) => {
+    const img = new Image();
+    img.onload = () => ok(img);
+    img.onerror = () => ok(null);
+    img.src = "/logo.svg";
+  });
+  return logo;
+}
+
 /** Dibuja la boleta y la devuelve como archivo PNG. */
 export async function slipImage(d: SlipData): Promise<File> {
   await document.fonts?.ready;
+  const mark = await loadLogo();
   const f = fonts();
   const W = 900, P = 56, ROW = 66;
   const H = 150 + 150 + 60 + d.rows.length * ROW + ROW + 40 + 120 + 170 + 60;
@@ -47,8 +60,14 @@ export async function slipImage(d: SlipData): Promise<File> {
 
   // Encabezado
   g.fillStyle = C.band; g.fillRect(0, 0, W, 150);
-  text(d.restaurant.toUpperCase(), P, 62, `600 22px ${f.body}`, "rgba(255,255,255,.75)");
-  text("Boleta de pago", P, 112, `800 44px ${f.display}`, "#ffffff");
+  let tx = P;
+  if (mark) {
+    const lh = 118, lw = (mark.naturalWidth / mark.naturalHeight || 1.19) * lh;
+    g.drawImage(mark, P - 8, 16, lw, lh);
+    tx = P - 8 + lw + 22;
+  }
+  text(d.restaurant.toUpperCase(), tx, 62, `600 22px ${f.body}`, "rgba(255,255,255,.75)");
+  text("Boleta de pago", tx, 112, `800 44px ${f.display}`, "#ffffff");
 
   let y = 150 + 74;
   text(d.name, P, y, `700 42px ${f.display}`, C.ink);

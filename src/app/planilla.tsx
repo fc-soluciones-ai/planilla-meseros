@@ -103,7 +103,11 @@ export default function Planilla(props: Props) {
       <div className="app">
         <header className="top">
           <div className="brand">
-            <h1>Planilla de meseros</h1>
+            <span className="brandmark">
+              {/* eslint-disable-next-line @next/next/no-img-element -- SVG vectorial, no necesita optimización */}
+              <img src="/logo.svg" alt="D'charly's" width={52} height={44} />
+              <h1>Planilla de meseros</h1>
+            </span>
           </div>
           <div className="weeknav">
             <Link className="iconbtn" href={`/?semana=${addDays(monday, -7)}`} aria-label="Semana anterior">‹</Link>

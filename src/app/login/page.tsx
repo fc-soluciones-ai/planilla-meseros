@@ -12,6 +12,8 @@ export default async function LoginPage() {
   if (missing.length) return <SetupNotice missing={missing} />;
   return (
     <div className="app login">
+      {/* eslint-disable-next-line @next/next/no-img-element -- SVG vectorial, no necesita optimización */}
+      <img src="/logo.svg" alt="D'charly's Chicharronera" className="login-logo" width={200} height={168} />
       <h1>Planilla de meseros</h1>
       <p className="hint">Escriba su usuario y contraseña.</p>
       <LoginForm />

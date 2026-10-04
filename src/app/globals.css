@@ -177,3 +177,11 @@ label.gcell:focus-within { outline: 2px solid var(--accent); outline-offset: 2px
 .pwrow input { flex: 1; min-width: 0 }
 .chip.danger { background: var(--danger); color: #fff; border-color: var(--danger) }
 .chip:disabled { opacity: .6 }
+
+/* logo */
+.brandmark { display: flex; align-items: center; gap: 10px; min-width: 0 }
+.brandmark img { width: 52px; height: auto; flex: none }
+.brandmark h1 { font-size: 20px }
+.login-logo { display: block; width: 200px; height: auto; margin: 0 auto 18px }
+.app.login h1 { text-align: center }
+.app.login > .hint { text-align: center }
