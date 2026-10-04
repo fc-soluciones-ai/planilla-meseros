@@ -25,14 +25,10 @@ Las dos horas se cambian en la pestaña **Propinas**. La lógica está en `src/l
 3. En **Settings → Environment Variables** agregue:
    - `APP_PASSWORD`: la contraseña de la dueña
    - `RESTAURANT_TZ`: `America/Costa_Rica` (u otra zona horaria)
-4. Cree las tablas una sola vez. En la consola SQL de Neon (Storage → la base → Open in Neon → SQL Editor)
-   pegue el contenido de `db/schema.sql` y ejecútelo. También puede hacerlo desde una computadora:
-   ```bash
-   npm install
-   vercel env pull .env.local
-   npm run db:setup
-   ```
-5. **Deployments → Redeploy** para que tome las variables nuevas.
+4. **Deployments → Redeploy** para que tome las variables nuevas.
+
+Las tablas se crean solas la primera vez que se abre la app. Si falta alguna variable,
+la app lo dice en pantalla en lugar de mostrar un error.
 
 ## Desarrollo local
 
@@ -49,6 +45,8 @@ npm run dev
 | `staff` | Personas: nombre, tipo (fijo, ocasional, propietario) y días libres habituales |
 | `shifts` | Un registro por persona y día trabajado: completo o desde una hora. Un día libre no tiene registro |
 | `settings` | Hora de apertura y hora de corte |
+
+El esquema está en `src/lib/schema.ts`.
 
 ## Pendiente
 

@@ -88,6 +88,7 @@ export async function saveSettings(open: string, cutoff: string) {
 }
 
 export async function login(_prev: string | null, form: FormData): Promise<string | null> {
+  if (!process.env.APP_PASSWORD) return "Falta configurar APP_PASSWORD en Vercel.";
   const ok = await startSession(String(form.get("password") ?? ""));
   if (!ok) return "Contraseña incorrecta.";
   redirect("/");

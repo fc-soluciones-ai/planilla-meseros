@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { ensureSchema, isMissingTable } from "./schema";
 import { addDays, weekDates, type Cell, type Settings, type Staff, type StaffType } from "./turnos";
 
 type StaffRow = { id: number; name: string; type: StaffType; days_off: number[] };
@@ -6,6 +7,16 @@ type ShiftRow = { staff_id: number; work_date: string; status: "full" | "from"; 
 type SettingRow = { key: string; value: string };
 
 export async function loadWeek(monday: string) {
+  try {
+    return await queryWeek(monday);
+  } catch (e) {
+    if (!isMissingTable(e)) throw e;
+    await ensureSchema(); // primera vez: crea las tablas y vuelve a intentar
+    return await queryWeek(monday);
+  }
+}
+
+async function queryWeek(monday: string) {
   const sql = db();
   const sunday = addDays(monday, 6);
   const [staffRows, shiftRows, settingRows] = (await Promise.all([
