@@ -39,10 +39,11 @@ const COLUMNS = {
   tip_card: "IMPORTE_TARJETA", commission: "COMISION", commission_tax: "IMPUESTOS_COMISION",
   tip_total: "PROPINA_TOTAL",
 } as const;
-const REQUIRED: (keyof typeof COLUMNS)[] = ["waiter", "date", "folio", "tip_total"];
+// El nombre del mesero no se usa para repartir (el reparto es por total del día); solo se guarda de referencia.
+const REQUIRED: (keyof typeof COLUMNS)[] = ["date", "folio", "tip_total"];
 
 /**
- * Lee el archivo tal como lo exporta el sistema: encabezados en la fila que dice MESERO … PROPINA_TOTAL,
+ * Lee el archivo tal como lo exporta el sistema: encabezados en la fila que dice FECHA … PROPINA_TOTAL,
  * luego un bloque por mesero (fila con el nombre y debajo sus cuentas). Ubica las columnas por nombre.
  */
 export async function parseVentas(data: ArrayBuffer): Promise<VentaRow[]> {
@@ -62,7 +63,7 @@ export async function parseVentas(data: ArrayBuffer): Promise<VentaRow[]> {
       const cells = (row.values as ExcelJS.CellValue[]).map(value);
       if (!col) {
         const names = cells.map(norm);
-        if (names.includes("MESERO") && names.includes("PROPINA_TOTAL")) {
+        if (names.includes("FECHA") && names.includes("PROPINA_TOTAL")) {
           col = {};
           for (const [k, name] of Object.entries(COLUMNS)) {
             const i = names.indexOf(name);
@@ -77,7 +78,7 @@ export async function parseVentas(data: ArrayBuffer): Promise<VentaRow[]> {
       if (name) waiter = name;
       const date = get("date");
       const folio = num(get("folio"));
-      if (!(date instanceof Date) || !folio || !waiter) return; // fila de nombre del mesero u otra
+      if (!(date instanceof Date) || !folio) return; // fila de nombre del mesero u otra
       rows.push({
         folio,
         waiter,
@@ -100,5 +101,5 @@ export async function parseVentas(data: ArrayBuffer): Promise<VentaRow[]> {
       return rows;
     }
   }
-  throw new Error("Este no parece el reporte de cuentas con propina: no encontré las columnas MESERO y PROPINA_TOTAL.");
+  throw new Error("Este no parece el reporte de cuentas con propina: no encontré las columnas FECHA y PROPINA_TOTAL.");
 }

@@ -15,17 +15,15 @@ function checkCell(c: Cell) {
   }
 }
 
-export type StaffInput = Pick<Staff, "name" | "type" | "daysOff" | "dailyWage" | "posName">;
+export type StaffInput = Pick<Staff, "name" | "type" | "daysOff" | "dailyWage">;
 
 function checkStaffInput(p: StaffInput): StaffInput {
   const name = p.name.trim();
-  const posName = p.posName?.trim() || null;
   if (!name || name.length > 60) throw new Error("Escriba un nombre (máximo 60 letras).");
   if (!STAFF_TYPES.includes(p.type)) throw new Error("Tipo de persona inválido.");
   if (!p.daysOff.every((d) => Number.isInteger(d) && d >= 0 && d <= 6)) throw new Error("Días libres inválidos.");
   if (!Number.isInteger(p.dailyWage) || p.dailyWage < 0 || p.dailyWage > 1_000_000) throw new Error("Salario inválido.");
-  if (posName && posName.length > 60) throw new Error("Nombre en el sistema muy largo.");
-  return { ...p, name, posName };
+  return { ...p, name };
 }
 
 const upsertShift = (sql: ReturnType<typeof db>, staffId: number, date: string, c: Cell) =>
@@ -45,8 +43,8 @@ export async function saveShift(staffId: number, date: string, cell: Cell) {
 export async function addStaff(input: StaffInput): Promise<Staff> {
   await requireAuth();
   const p = checkStaffInput(input);
-  const rows = (await db()`insert into staff (name, type, days_off, daily_wage, pos_name)
-    values (${p.name}, ${p.type}, ${p.daysOff}, ${p.dailyWage}, ${p.posName}) returning id`) as { id: number }[];
+  const rows = (await db()`insert into staff (name, type, days_off, daily_wage)
+    values (${p.name}, ${p.type}, ${p.daysOff}, ${p.dailyWage}) returning id`) as { id: number }[];
   return { id: rows[0].id, ...p };
 }
 
@@ -54,7 +52,7 @@ export async function updateStaff(id: number, input: StaffInput) {
   await requireAuth();
   const p = checkStaffInput(input);
   await db()`update staff set name = ${p.name}, type = ${p.type}, days_off = ${p.daysOff},
-    daily_wage = ${p.dailyWage}, pos_name = ${p.posName} where id = ${id}`;
+    daily_wage = ${p.dailyWage} where id = ${id}`;
 }
 
 /**
@@ -136,15 +134,6 @@ export async function saveSettings(open: string, cutoff: string) {
     sql`insert into settings (key, value) values ('open', ${open}) on conflict (key) do update set value = excluded.value`,
     sql`insert into settings (key, value) values ('cutoff', ${cutoff}) on conflict (key) do update set value = excluded.value`,
   ]);
-}
-
-/** Códigos compartidos del sistema (ej. "ELENA"): su propina entra al reparto sin generar aviso. */
-export async function saveSharedCodes(codes: string[]) {
-  await requireAuth();
-  const clean = [...new Set(codes.map((c) => String(c).trim().toUpperCase()).filter(Boolean))];
-  if (clean.length > 50 || clean.some((c) => c.length > 60)) throw new Error("Códigos inválidos.");
-  await db()`insert into settings (key, value) values ('shared_codes', ${JSON.stringify(clean)})
-             on conflict (key) do update set value = excluded.value`;
 }
 
 export async function login(_prev: string | null, form: FormData): Promise<string | null> {

@@ -4,13 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import InstallButton from "./install-button";
-import { calcWeek, norm, sharedTotals, weekWarnings, type Ticket } from "@/lib/reparto";
+import { calcWeek, weekWarnings, type Ticket } from "@/lib/reparto";
 import {
   DAYS, DLONG, TYPES, addDays, fmt, isPresent, opMin, shortDate, toMin, weekDates,
   type Cell, type Settings, type Staff, type StaffType,
 } from "@/lib/turnos";
 import {
-  addStaff, addUser, changeUserPassword, deactivateStaff, deleteUser, importVentas, logout, saveSettings, saveSharedCodes, saveShift, updateStaff,
+  addStaff, addUser, changeUserPassword, deactivateStaff, deleteUser, importVentas, logout, saveSettings, saveShift, updateStaff,
   type ImportResult, type StaffInput, type UserResult,
 } from "./actions";
 import type { AppUser } from "@/lib/data";
@@ -67,11 +67,6 @@ export default function Planilla(props: Props) {
     setTimeout(() => setToast((t) => (t?.msg === msg ? null : t)), 2200);
   }
 
-  function setSharedCodes(codes: string[]) {
-    setSettings((s) => ({ ...s, sharedCodes: codes }));
-    persist(() => saveSharedCodes(codes), "Guardado");
-  }
-
   function setCell(id: number, d: number, cell: Cell) {
     setSched((s) => ({ ...s, [id]: s[id].map((c, i) => (i === d ? cell : c)) }));
     persist(() => saveShift(id, dates[d], cell));
@@ -113,11 +108,10 @@ export default function Planilla(props: Props) {
             <TipsTab dates={dates} staff={staff} sched={sched} tickets={props.tickets}
               settings={settings}
               onSlip={(id) => setSheet({ kind: "slip", id })}
-              onSharedCodes={setSharedCodes} />
+ />
           )}
           {tab === "config" && (
             <ConfigTab users={props.users} me={props.me} settings={settings}
-              onSharedCodes={setSharedCodes}
               onSettings={(s) => {
                 setSettings(s);
                 persist(() => saveSettings(s.open, s.cutoff), "Horario guardado");
@@ -299,7 +293,7 @@ function StaffTab({ staff, sched, dates, today, settings, onCell, onEdit, onAdd 
             <span><i style={{ background: "var(--part)" }} />Desde la hora (15 = 3 p. m.)</span>
             <span><i style={{ background: "var(--off)" }} />Libre</span>
           </div>
-          <p className="hint" style={{ marginTop: 8 }}>Toque el nombre para editar sus días libres de siempre, el salario o el nombre en el sistema.</p>
+          <p className="hint" style={{ marginTop: 8 }}>Toque el nombre para editar sus días libres de siempre o el salario.</p>
         </>
       )}
 
@@ -311,7 +305,7 @@ function StaffTab({ staff, sched, dates, today, settings, onCell, onEdit, onAdd 
             {owners.map((p) => (
               <button key={p.id} className="row" onClick={() => onEdit(p.id)}>
                 <span className={`avatar ${p.type}`}>{initials(p.name)}</span>
-                <span className="who"><b>{p.name}</b>{p.posName && <span className="tag">En el sistema: {p.posName}</span>}</span>
+                <span className="who"><b>{p.name}</b></span>
                 <span className="chev">›</span>
               </button>
             ))}
@@ -337,7 +331,6 @@ function StaffForm({ person, busy, onSave, onRemove, onClose }: {
 }) {
   const [name, setName] = useState(person?.name ?? "");
   const [wage, setWage] = useState(String(person?.dailyWage ?? 15000));
-  const [posName, setPosName] = useState(person?.posName ?? "");
   const [type, setType] = useState<StaffType>(person?.type ?? "ocasional");
   const [daysOff, setDaysOff] = useState<number[]>(person?.daysOff ?? []);
   const [confirm, setConfirm] = useState(false);
@@ -351,7 +344,7 @@ function StaffForm({ person, busy, onSave, onRemove, onClose }: {
         if (!name.trim()) return;
         onSave({
           name: name.trim(), type, daysOff: type === "fijo" ? daysOff : [],
-          dailyWage: Math.max(0, Math.round(Number(wage) || 0)), posName: posName.trim() || null,
+          dailyWage: Math.max(0, Math.round(Number(wage) || 0)),
         });
       }}>
         <div className="grab" />
@@ -372,11 +365,6 @@ function StaffForm({ person, busy, onSave, onRemove, onClose }: {
         <label className="field">
           Salario por día trabajado (₡)
           <input id="staff-wage" inputMode="numeric" value={wage} onChange={(e) => setWage(e.target.value.replace(/\D/g, ""))} />
-        </label>
-        <label className="field">
-          Nombre en el sistema del restaurante
-          <input id="staff-pos" value={posName} maxLength={60} placeholder={name ? firstName(name).toUpperCase() : "Ej. SHAI"} onChange={(e) => setPosName(e.target.value)} />
-          <small className="hint">Solo si en el reporte de ventas aparece distinto a su primer nombre.</small>
         </label>
         {type === "fijo" && (
           <fieldset className="field">
@@ -461,9 +449,9 @@ function DayTab({ staff, sched, settings, dates, day, setDay }: {
   );
 }
 
-function TipsTab({ dates, staff, sched, tickets, settings, onSlip, onSharedCodes }: {
+function TipsTab({ dates, staff, sched, tickets, settings, onSlip }: {
   dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>; tickets: Ticket[];
-  settings: Settings; onSlip: (id: number) => void; onSharedCodes: (codes: string[]) => void;
+  settings: Settings; onSlip: (id: number) => void;
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -471,8 +459,7 @@ function TipsTab({ dates, staff, sched, tickets, settings, onSlip, onSharedCodes
   const [result, setResult] = useState<ImportResult | null>(null);
 
   const { days, people } = calcWeek(dates, staff, sched, tickets, settings.cutoff);
-  const warnings = weekWarnings(dates, staff, sched, tickets, settings.cutoff, days, settings.sharedCodes);
-  const shared = sharedTotals(dates, tickets, settings.cutoff, settings.sharedCodes);
+  const warnings = weekWarnings(days);
   const totalTips = days.reduce((a, d) => a + d.total, 0);
   const paid = people.filter((p) => p.total > 0);
   const sum = (k: "salary" | "tip" | "total") => paid.reduce((a, p) => a + p[k], 0);
@@ -539,28 +526,7 @@ function TipsTab({ dates, staff, sched, tickets, settings, onSlip, onSharedCodes
         <>
           <h2>Para revisar</h2>
           <div className="warns">
-            {warnings.map((w, i) => (
-              <div key={i} className={`warnrow ${w.level}`}>
-                <p>{w.text}</p>
-                {w.code && (
-                  <button className="chip" onClick={() => onSharedCodes([...settings.sharedCodes, norm(w.code!)])}>
-                    {w.code} es código compartido
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {settings.sharedCodes.length > 0 && (
-        <>
-          <h2>Códigos compartidos</h2>
-          <p className="hint">Su propina entra al reparto del día entre quienes trabajaron. Se cambian en Configuración.</p>
-          <div className="quick">
-            {settings.sharedCodes.map((c) => (
-              <span key={c} className="chip">{c}{shared.get(c) ? ` · ${money(shared.get(c)!)}` : " · sin cuentas esta semana"}</span>
-            ))}
+            {warnings.map((w, i) => <p key={i} className={`warnrow ${w.level}`}>{w.text}</p>)}
           </div>
         </>
       )}
@@ -648,9 +614,8 @@ function SlipSheet({ person: p, monday, dates, staff, sched, tickets, settings, 
   );
 }
 
-function ConfigTab({ users, me, settings, onSharedCodes, onSettings }: {
-  users: AppUser[]; me: Session; settings: Settings;
-  onSharedCodes: (codes: string[]) => void; onSettings: (s: Settings) => void;
+function ConfigTab({ users, me, settings, onSettings }: {
+  users: AppUser[]; me: Session; settings: Settings; onSettings: (s: Settings) => void;
 }) {
   const router = useRouter();
   const [busy, start] = useTransition();
@@ -662,7 +627,6 @@ function ConfigTab({ users, me, settings, onSharedCodes, onSettings }: {
   const [editing, setEditing] = useState<number | null>(null);
   const [newPw, setNewPw] = useState("");
   const [removing, setRemoving] = useState<number | null>(null);
-  const [code, setCode] = useState("");
 
   function run(fn: () => Promise<UserResult>, ok: string, after?: () => void) {
     start(async () => {
@@ -750,24 +714,6 @@ function ConfigTab({ users, me, settings, onSharedCodes, onSettings }: {
           </label>
         </div>
       </div>
-
-      <h2>Códigos compartidos</h2>
-      <p className="hint">Códigos del sistema que usa cualquiera, como el de alguien que ya no trabaja. Su propina se reparte sin aviso.</p>
-      <div className="quick">
-        {settings.sharedCodes.length === 0 && <span className="hint">Ninguno.</span>}
-        {settings.sharedCodes.map((c) => (
-          <button key={c} className="chip" aria-label={`Quitar ${c}`} onClick={() => onSharedCodes(settings.sharedCodes.filter((x) => x !== c))}>{c} ✕</button>
-        ))}
-      </div>
-      <form className="inline" onSubmit={(e) => {
-        e.preventDefault();
-        const c = norm(code);
-        if (c && !settings.sharedCodes.includes(c)) onSharedCodes([...settings.sharedCodes, c]);
-        setCode("");
-      }}>
-        <input id="shared-code" value={code} placeholder="Ej. ELENA" autoCapitalize="characters" onChange={(e) => setCode(e.target.value)} />
-        <button className="chip on">Agregar</button>
-      </form>
 
       <h2>Sesión</h2>
       <div className="rule">

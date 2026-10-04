@@ -1,8 +1,8 @@
 // Cálculo de la planilla: salario por día trabajado + reparto de propinas (sin dependencias de servidor).
-import { DLONG, isPresent, opMin, turnDate, type Cell, type Staff } from "./turnos";
+import { DLONG, isPresent, turnDate, type Cell, type Staff } from "./turnos";
 
 /** Cuenta con propina ya cargada: fecha y hora de facturación tal como vienen del sistema. */
-export type Ticket = { date: string; time: string; tip: number; waiter: string };
+export type Ticket = { date: string; time: string; tip: number };
 
 export type DayCalc = {
   total: number;      // propina del día (día + madrugada siguiente hasta la hora de corte)
@@ -17,16 +17,10 @@ export type PersonCalc = {
   tip: number;
   total: number;
 };
-export type Warning = { level: "warn" | "info"; text: string; code?: string };
+export type Warning = { level: "warn" | "info"; text: string };
 
 /** Los propietarios facturan y su propina entra al reparto, pero no reciben parte ni salario. */
 export const sharesTips = (p: Staff) => p.type !== "propietario";
-
-export const norm = (s: string) =>
-  s.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase();
-
-/** Nombre con que la persona aparece en el sistema: el configurado o su primer nombre. */
-export const posKey = (p: Staff) => norm(p.posName || p.name.split(/\s+/)[0]);
 
 /**
  * Método de la dueña: la propina de cada día se divide entre quienes trabajaron ese día.
@@ -69,56 +63,14 @@ export function calcWeek(
   return { days, people };
 }
 
-/** Avisos para revisar antes de pagar: lo que no encaja entre el archivo y lo marcado. */
-export function weekWarnings(
-  dates: string[], staff: Staff[], sched: Record<number, Cell[]>, tickets: Ticket[], cutoff: string, days: DayCalc[],
-  sharedCodes: string[] = [],
-): Warning[] {
-  const shared = new Set(sharedCodes.map(norm));
-  const out: Warning[] = [];
-  const byKey = new Map(staff.map((p) => [posKey(p), p]));
-  const unknown = new Map<string, number>();
-  const seen = new Set<string>();
-
-  for (const t of tickets) {
-    const d = dates.indexOf(turnDate(t.date, t.time, cutoff));
-    if (d < 0) continue;
-    const p = byKey.get(norm(t.waiter));
-    if (!p) {
-      if (!shared.has(norm(t.waiter))) unknown.set(t.waiter, (unknown.get(t.waiter) ?? 0) + t.tip);
-      continue;
-    }
-    if (!sharesTips(p)) continue;
-    const cell = sched[p.id][d];
-    const key = `${p.id}-${d}`;
-    if (seen.has(key)) continue;
-    if (cell.s === "off") {
-      seen.add(key);
-      out.push({ level: "warn", text: `${p.name} facturó el ${DLONG[d]} a las ${t.time} pero está libre ese día.` });
-    } else if (cell.s === "from" && opMin(t.time, cutoff) < opMin(cell.t!, cutoff)) {
-      seen.add(key);
-      out.push({ level: "warn", text: `${p.name} facturó el ${DLONG[d]} a las ${t.time} pero está marcado desde las ${cell.t}.` });
-    }
-  }
-  days.forEach((x, d) => {
-    if (x.unassigned > 0) {
-      out.push({ level: "warn", text: `El ${DLONG[d]} hay ₡${Math.round(x.unassigned).toLocaleString("en-US")} de propina facturada cuando no había nadie marcado. No se repartió.` });
-    }
-  });
-  for (const [w, tip] of unknown) {
-    out.push({ level: "info", code: w, text: `${w} facturó ₡${Math.round(tip).toLocaleString("en-US")} de propina y no está en la planilla. Su propina sí entra al reparto del día. Si es del equipo o propietario, escriba "${w}" como nombre en el sistema de esa persona. Si es un código que usan otros, márquelo como compartido.` });
-  }
-  return out;
-}
-
-/** Propina de la semana por código compartido, para mostrarla aparte. */
-export function sharedTotals(dates: string[], tickets: Ticket[], cutoff: string, sharedCodes: string[]) {
-  const shared = new Set(sharedCodes.map(norm));
-  const out = new Map<string, number>();
-  for (const t of tickets) {
-    const k = norm(t.waiter);
-    if (!shared.has(k) || !dates.includes(turnDate(t.date, t.time, cutoff))) continue;
-    out.set(k, (out.get(k) ?? 0) + t.tip);
-  }
-  return out;
+/**
+ * Avisos para revisar antes de pagar. El reparto es por el total del día, sin importar qué nombre
+ * aparece en la cuenta; solo se avisa si hubo propina a una hora en que no había nadie marcado.
+ */
+export function weekWarnings(days: DayCalc[]): Warning[] {
+  return days.flatMap((x, d) =>
+    x.unassigned > 0
+      ? [{ level: "warn" as const, text: `El ${DLONG[d]} hay ₡${Math.round(x.unassigned).toLocaleString("en-US")} de propina facturada cuando no había nadie marcado. No se repartió.` }]
+      : [],
+  );
 }

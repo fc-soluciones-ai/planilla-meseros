@@ -49,11 +49,11 @@ npm run dev
 
 | Tabla | Qué guarda |
 |---|---|
-| `staff` | Personas: nombre, tipo, días libres habituales, salario por día y nombre en el sistema |
+| `staff` | Personas: nombre, tipo, días libres habituales y salario por día |
 | `shifts` | Un registro por persona y día trabajado: completo o desde una hora. Un día libre no tiene registro |
 | `tickets` | Cuentas con propina del archivo de ventas (una por folio) |
 | `users` | Usuarios que pueden entrar (contraseña cifrada con scrypt) |
-| `settings` | Hora de apertura, hora de corte y códigos compartidos |
+| `settings` | Hora de apertura y hora de corte |
 
 El esquema está en `src/lib/schema.ts`.
 
@@ -65,5 +65,5 @@ El esquema está en `src/lib/schema.ts`.
 3. La app muestra la propina por día, los avisos para revisar y la planilla. Tocando a una persona se ve su
    boleta (salario + propina por día) y se puede enviar por WhatsApp.
 
-Cada persona tiene su **salario por día** (₡15,000 por defecto) y, si en el sistema aparece con otro nombre
-(ej. "SHAI"), su **nombre en el sistema** para cruzar las cuentas.
+Cada persona tiene su **salario por día** (₡15,000 por defecto). El nombre del mesero que trae el archivo
+no se usa: la propina se reparte por el total de cada día, sin importar quién facturó.

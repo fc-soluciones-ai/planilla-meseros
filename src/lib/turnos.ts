@@ -9,14 +9,10 @@ export type Staff = {
   type: StaffType;
   daysOff: number[];
   dailyWage: number;
-  /** Nombre con que aparece en el sistema del restaurante, si es distinto (ej. "SHAI"). */
-  posName: string | null;
 };
 export type Settings = {
   open: string;
   cutoff: string;
-  /** Códigos del sistema que usa cualquiera (ej. de alguien que ya no trabaja): su propina se reparte sin aviso. */
-  sharedCodes: string[];
 };
 
 export const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
