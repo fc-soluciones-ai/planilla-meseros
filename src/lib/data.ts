@@ -45,7 +45,7 @@ async function queryWeek(monday: string) {
   }
 
   const s = Object.fromEntries(settingRows.map((r) => [r.key, r.value]));
-  const settings: Settings = { open: s.open ?? "07:00", cutoff: s.cutoff ?? "06:00" };
+  const settings: Settings = { open: s.open ?? "07:00", cutoff: s.cutoff ?? "05:00" };
 
   return { staff, sched, settings };
 }

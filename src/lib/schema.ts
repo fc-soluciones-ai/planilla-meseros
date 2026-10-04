@@ -24,7 +24,7 @@ const STATEMENTS = [
     key    text primary key,
     value  text not null
   )`,
-  `insert into settings (key, value) values ('open', '07:00'), ('cutoff', '06:00')
+  `insert into settings (key, value) values ('open', '07:00'), ('cutoff', '05:00')
    on conflict (key) do nothing`,
 ];
 

@@ -5,9 +5,14 @@ y a qué hora entró cuando no hizo el día completo. Con eso se reparten las pr
 
 ## Reglas
 
-1. **La propina corre desde la hora de entrada.** Quien entró a las 15:00 no recibe de lo facturado antes.
-2. **La madrugada pertenece al turno anterior.** El turno va de la hora de apertura (07:00) a la hora
-   de corte del día siguiente (06:00). Una factura del domingo 01:25 suma al sábado.
+Así se reparte la propina de cada día (método de la dueña):
+
+1. Se toma `PROPINA_TOTAL` de cada cuenta del archivo de ventas.
+2. **Día = todo el día + la madrugada siguiente hasta antes de las 5:00 a. m.** Una cuenta del lunes
+   a la 01:25 suma al domingo.
+3. Se suma y se divide entre los meseros que trabajaron ese día.
+4. **Quien entra tarde** recibe solo de las propinas facturadas desde su hora de entrada.
+   Si todos hicieron el día completo, el resultado es igual a dividir el total entre todos.
 
 Las dos horas se cambian en la pestaña **Propinas**. La lógica está en `src/lib/turnos.ts`.
 
