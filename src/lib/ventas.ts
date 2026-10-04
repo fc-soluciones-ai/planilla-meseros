@@ -46,7 +46,7 @@ const REQUIRED: (keyof typeof COLUMNS)[] = ["date", "folio", "tip_total"];
  * Lee el archivo tal como lo exporta el sistema: encabezados en la fila que dice FECHA … PROPINA_TOTAL,
  * luego un bloque por mesero (fila con el nombre y debajo sus cuentas). Ubica las columnas por nombre.
  */
-export async function parseVentas(data: ArrayBuffer): Promise<VentaRow[]> {
+export async function parseVentas(data: ArrayBuffer): Promise<{ rows: VentaRow[]; restaurant: string | null }> {
   const wb = new ExcelJS.Workbook();
   try {
     await wb.xlsx.load(data);
@@ -57,12 +57,16 @@ export async function parseVentas(data: ArrayBuffer): Promise<VentaRow[]> {
   for (const ws of wb.worksheets) {
     let col: Partial<Record<keyof typeof COLUMNS, number>> | null = null;
     let waiter = "";
+    let restaurant: string | null = null;
     const rows: VentaRow[] = [];
 
     ws.eachRow((row) => {
       const cells = (row.values as ExcelJS.CellValue[]).map(value);
       if (!col) {
         const names = cells.map(norm);
+        // Antes de los encabezados viene el título; la primera línea de texto sin números es el restaurante
+        const first = String(cells[1] ?? "").trim();
+        if (!restaurant && first && !/\d/.test(first) && norm(first) !== "CUENTAS CON PROPINA" && first.length <= 80) restaurant = first;
         if (names.includes("FECHA") && names.includes("PROPINA_TOTAL")) {
           col = {};
           for (const [k, name] of Object.entries(COLUMNS)) {
@@ -98,7 +102,7 @@ export async function parseVentas(data: ArrayBuffer): Promise<VentaRow[]> {
       const missing = REQUIRED.filter((k) => !col![k]).map((k) => COLUMNS[k]);
       if (missing.length) throw new Error(`Al archivo le faltan columnas: ${missing.join(", ")}.`);
       if (!rows.length) throw new Error("El archivo no trae cuentas.");
-      return rows;
+      return { rows, restaurant };
     }
   }
   throw new Error("Este no parece el reporte de cuentas con propina: no encontré las columnas FECHA y PROPINA_TOTAL.");

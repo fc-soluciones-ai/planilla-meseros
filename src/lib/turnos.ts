@@ -13,6 +13,8 @@ export type Staff = {
 export type Settings = {
   open: string;
   cutoff: string;
+  /** Nombre del restaurante para las boletas (se toma del archivo de ventas). */
+  restaurant: string;
 };
 
 export const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];

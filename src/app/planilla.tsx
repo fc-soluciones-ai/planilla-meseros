@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import InstallButton from "./install-button";
-import { calcWeek, weekWarnings, type Ticket } from "@/lib/reparto";
+import { calcWeek, weekWarnings, type PersonCalc, type Ticket } from "@/lib/reparto";
+import { shareFiles, slipImage, type SlipData } from "@/lib/boleta";
 import {
   DAYS, DLONG, TYPES, addDays, fmt, isPresent, opMin, shortDate, toMin, weekDates,
   type Cell, type Settings, type Staff, type StaffType,
 } from "@/lib/turnos";
 import {
-  addStaff, addUser, changeUserPassword, deactivateStaff, deleteUser, importVentas, logout, saveSettings, saveShift, updateStaff,
+  addStaff, addUser, changeUserPassword, deactivateStaff, deleteUser, importVentas, logout, saveRestaurant, saveSettings, saveShift, updateStaff,
   type ImportResult, type StaffInput, type UserResult,
 } from "./actions";
 import type { AppUser } from "@/lib/data";
@@ -37,6 +38,27 @@ const GROUPS: { type: StaffType; title: string }[] = [
 const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 const firstName = (n: string) => n.split(/\s+/)[0];
 const money = (n: number) => "₡" + Math.round(n).toLocaleString("en-US");
+
+/** Datos de la boleta de una persona para la semana. */
+function slipData(p: Staff, r: PersonCalc, dates: string[], sched: Record<number, Cell[]>, restaurant: string): SlipData {
+  return {
+    restaurant: restaurant || "Planilla de meseros",
+    name: p.name,
+    week: `Semana del ${shortDate(dates[0])} al ${shortDate(dates[6])} ${dates[6].slice(0, 4)}`,
+    rows: r.days
+      .map((d, i) => ({ ...d, i, c: sched[p.id][i] }))
+      .filter((d) => d.c.s !== "off" || d.tip > 0)
+      .map((d) => ({
+        day: `${DAYS[d.i]} ${dates[d.i].slice(8).replace(/^0/, "")}`,
+        note: d.c.s === "from" ? `desde ${d.c.t}` : undefined,
+        salary: d.salary,
+        tip: d.tip,
+      })),
+    salary: r.salary,
+    tip: r.tip,
+    total: r.total,
+  };
+}
 
 export default function Planilla(props: Props) {
   const { monday, today } = props;
@@ -105,13 +127,18 @@ export default function Planilla(props: Props) {
             <DayTab staff={staff} sched={sched} settings={settings} dates={dates} day={day} setDay={setDay} />
           )}
           {tab === "tips" && (
-            <TipsTab dates={dates} staff={staff} sched={sched} tickets={props.tickets}
+            <TipsTab restaurant={settings.restaurant || props.settings.restaurant} dates={dates} staff={staff} sched={sched} tickets={props.tickets}
               settings={settings}
               onSlip={(id) => setSheet({ kind: "slip", id })}
  />
           )}
           {tab === "config" && (
-            <ConfigTab users={props.users} me={props.me} settings={settings}
+            <ConfigTab users={props.users} me={props.me}
+              settings={{ ...settings, restaurant: settings.restaurant || props.settings.restaurant }}
+              onRestaurant={(name) => {
+                setSettings((s) => ({ ...s, restaurant: name.trim() }));
+                persist(() => saveRestaurant(name), "Nombre guardado");
+              }}
               onSettings={(s) => {
                 setSettings(s);
                 persist(() => saveSettings(s.open, s.cutoff), "Horario guardado");
@@ -168,7 +195,8 @@ export default function Planilla(props: Props) {
         const p = staff.find((x) => x.id === sheet.id);
         if (!p) return null;
         return <SlipSheet person={p} monday={monday} dates={dates} staff={staff} sched={sched}
-          tickets={props.tickets} settings={settings} onClose={() => setSheet(null)} />;
+          tickets={props.tickets} settings={settings} restaurant={settings.restaurant || props.settings.restaurant}
+          onClose={() => setSheet(null)} />;
       })()}
 
       {toast && (
@@ -449,10 +477,12 @@ function DayTab({ staff, sched, settings, dates, day, setDay }: {
   );
 }
 
-function TipsTab({ dates, staff, sched, tickets, settings, onSlip }: {
-  dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>; tickets: Ticket[];
+function TipsTab({ restaurant, dates, staff, sched, tickets, settings, onSlip }: {
+  restaurant: string; dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>; tickets: Ticket[];
   settings: Settings; onSlip: (id: number) => void;
 }) {
+  const [sharing, setSharing] = useState(false);
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, startUpload] = useTransition();
@@ -552,6 +582,18 @@ function TipsTab({ dates, staff, sched, tickets, settings, onSlip }: {
             </tbody>
           </table></div>
           {rounding !== 0 && <p className="note">Diferencia por redondear al colón: {money(rounding)}.</p>}
+          <button className="secondary" disabled={sharing} onClick={async () => {
+            setSharing(true); setShareMsg(null);
+            try {
+              const files = await Promise.all(paid.map((r) => slipImage(slipData(staff.find((x) => x.id === r.id)!, r, dates, sched, restaurant))));
+              const res = await shareFiles(files, `Boletas semana ${shortDate(dates[0])}`);
+              if (res === "downloaded") setShareMsg("Este navegador no permite compartir: las boletas se descargaron como imágenes.");
+            } catch {
+              setShareMsg("No se pudieron generar las boletas.");
+            }
+            setSharing(false);
+          }}>{sharing ? "Preparando…" : `Compartir todas las boletas (${paid.length})`}</button>
+          {shareMsg && <p className="note">{shareMsg}</p>}
         </>
       )}
 
@@ -559,12 +601,13 @@ function TipsTab({ dates, staff, sched, tickets, settings, onSlip }: {
   );
 }
 
-function SlipSheet({ person: p, monday, dates, staff, sched, tickets, settings, onClose }: {
+function SlipSheet({ person: p, monday, dates, staff, sched, tickets, settings, restaurant, onClose }: {
   person: Staff; monday: string; dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>;
-  tickets: Ticket[]; settings: Settings; onClose: () => void;
+  tickets: Ticket[]; settings: Settings; restaurant: string; onClose: () => void;
 }) {
   const r = calcWeek(dates, staff, sched, tickets, settings.cutoff).people.find((x) => x.id === p.id)!;
-  const [copied, setCopied] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const worked = r.days.map((d, i) => ({ ...d, i })).filter((d) => sched[p.id][d.i].s !== "off" || d.tip > 0);
   const text = [
     `*Planilla ${p.name}*`,
@@ -577,8 +620,16 @@ function SlipSheet({ person: p, monday, dates, staff, sched, tickets, settings, 
     `*Total a pagar: ${money(r.total)}*`,
   ].join("\n");
 
-  async function copy() {
-    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* sin portapapeles */ }
+  async function share() {
+    setSharing(true); setNote(null);
+    try {
+      const file = await slipImage(slipData(p, r, dates, sched, restaurant));
+      const res = await shareFiles([file], `Boleta ${p.name}`);
+      if (res === "downloaded") setNote("Este navegador no permite compartir: la boleta se descargó como imagen.");
+    } catch {
+      setNote("No se pudo generar la boleta.");
+    }
+    setSharing(false);
   }
 
   return (
@@ -607,15 +658,18 @@ function SlipSheet({ person: p, monday, dates, staff, sched, tickets, settings, 
           </tbody>
         </table></div>
         <div className="grand"><span>Total a pagar</span><b>{money(r.total)}</b></div>
-        <a className="primary linkbtn" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">Enviar por WhatsApp</a>
-        <button className="secondary" onClick={copy}>{copied ? "Copiado" : "Copiar texto"}</button>
+        <button className="primary" disabled={sharing} onClick={share}>{sharing ? "Preparando…" : "Compartir boleta"}</button>
+        <p className="note">Se abre el menú Compartir del celular: escoja WhatsApp y el contacto.</p>
+        {note && <p className="note">{note}</p>}
+        <a className="secondary linkbtn" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">Enviar como texto por WhatsApp</a>
       </div>
     </>
   );
 }
 
-function ConfigTab({ users, me, settings, onSettings }: {
+function ConfigTab({ users, me, settings, onSettings, onRestaurant }: {
   users: AppUser[]; me: Session; settings: Settings; onSettings: (s: Settings) => void;
+  onRestaurant: (name: string) => void;
 }) {
   const router = useRouter();
   const [busy, start] = useTransition();
@@ -695,6 +749,17 @@ function ConfigTab({ users, me, settings, onSettings }: {
         <button className="primary" disabled={busy}>{busy ? "Guardando…" : "Agregar usuario"}</button>
       </form>
       {msg && <p className={msg.err ? "error" : "okmsg"} style={{ marginTop: 8 }}>{msg.text}</p>}
+
+      <h2>Boletas</h2>
+      <form className="inline" onSubmit={(e) => {
+        e.preventDefault();
+        const v = (e.currentTarget.elements.namedItem("restaurant") as HTMLInputElement).value;
+        onRestaurant(v);
+      }}>
+        <input id="cfg-restaurant" name="restaurant" defaultValue={settings.restaurant} placeholder="Nombre del restaurante" maxLength={80} />
+        <button className="chip on">Guardar</button>
+      </form>
+      <p className="note">Sale arriba en cada boleta. Se toma del archivo de ventas la primera vez.</p>
 
       <h2>Horario del turno</h2>
       <div className="rule">

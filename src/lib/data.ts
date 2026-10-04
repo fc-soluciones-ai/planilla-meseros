@@ -21,6 +21,7 @@ async function queryWeek(monday: string) {
   const settings: Settings = {
     open: s.open ?? "07:00",
     cutoff: s.cutoff ?? "05:00",
+    restaurant: s.restaurant ?? "",
   };
 
   // Cuentas del lunes a la hora de corte hasta el lunes siguiente a la hora de corte:

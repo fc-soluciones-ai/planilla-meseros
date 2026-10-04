@@ -85,7 +85,11 @@ export async function importVentas(form: FormData): Promise<ImportResult> {
   const file = form.get("archivo");
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Escoja el archivo de ventas." };
   try {
-    const rows = await parseVentas(await file.arrayBuffer());
+    const { rows, restaurant } = await parseVentas(await file.arrayBuffer());
+    if (restaurant) {
+      // Nombre para las boletas; si ya se cambió en Configuración, se respeta
+      await db()`insert into settings (key, value) values ('restaurant', ${restaurant}) on conflict (key) do nothing`;
+    }
     const result = (await withSchema(() => db().query(
       `insert into tickets (folio, waiter, billed_at, amount, tip_cash, tip_vouchers, tip_other, tip_card,
                             commission, commission_tax, tip_total)
@@ -134,6 +138,14 @@ export async function saveSettings(open: string, cutoff: string) {
     sql`insert into settings (key, value) values ('open', ${open}) on conflict (key) do update set value = excluded.value`,
     sql`insert into settings (key, value) values ('cutoff', ${cutoff}) on conflict (key) do update set value = excluded.value`,
   ]);
+}
+
+/** Nombre del restaurante que sale en el encabezado de las boletas. */
+export async function saveRestaurant(name: string) {
+  await requireAuth();
+  const clean = name.trim().slice(0, 80);
+  await db()`insert into settings (key, value) values ('restaurant', ${clean})
+             on conflict (key) do update set value = excluded.value`;
 }
 
 export async function login(_prev: string | null, form: FormData): Promise<string | null> {
