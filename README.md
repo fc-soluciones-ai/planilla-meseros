@@ -47,13 +47,20 @@ npm run dev
 
 | Tabla | Qué guarda |
 |---|---|
-| `staff` | Personas: nombre, tipo (fijo, ocasional, propietario) y días libres habituales |
+| `staff` | Personas: nombre, tipo, días libres habituales, salario por día y nombre en el sistema |
 | `shifts` | Un registro por persona y día trabajado: completo o desde una hora. Un día libre no tiene registro |
+| `tickets` | Cuentas con propina del archivo de ventas (una por folio) |
 | `settings` | Hora de apertura y hora de corte |
 
 El esquema está en `src/lib/schema.ts`.
 
-## Pendiente
+## Uso semanal
 
-- Importar el archivo de propinas del sistema de facturación.
-- Calcular el reparto como lo hace hoy el Excel de planilla.
+1. Durante la semana, en **Meseros**, se marca quién trabajó cada día y la hora de entrada de quien llegó tarde.
+2. Se exporta del sistema el reporte **Cuentas con propina** de **lunes a lunes** y se sube en **Propinas**.
+   Se toma la columna `PROPINA_TOTAL`. Volver a subir un archivo no duplica nada: cada cuenta se identifica por su folio.
+3. La app muestra la propina por día, los avisos para revisar y la planilla. Tocando a una persona se ve su
+   boleta (salario + propina por día) y se puede enviar por WhatsApp.
+
+Cada persona tiene su **salario por día** (₡15,000 por defecto) y, si en el sistema aparece con otro nombre
+(ej. "SHAI"), su **nombre en el sistema** para cruzar las cuentas.

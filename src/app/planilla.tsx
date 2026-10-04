@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useRef, useState, useTransition } from "react";
+import { calcWeek, weekWarnings, type Ticket } from "@/lib/reparto";
 import {
   DAYS, DLONG, TYPES, addDays, fmt, isPresent, opMin, shortDate, toMin, weekDates,
   type Cell, type Settings, type Staff, type StaffType,
 } from "@/lib/turnos";
 import {
-  addStaff, deactivateStaff, logout, saveSettings, saveShift, saveStaffWeek, updateStaff,
+  addStaff, deactivateStaff, importVentas, logout, saveSettings, saveShift, saveStaffWeek, updateStaff,
+  type ImportResult, type StaffInput,
 } from "./actions";
 
 type Props = {
@@ -16,9 +19,10 @@ type Props = {
   staff: Staff[];
   sched: Record<number, Cell[]>;
   settings: Settings;
+  tickets: Ticket[];
 };
 type Tab = "staff" | "day" | "tips";
-type Sheet = { kind: "days"; id: number } | { kind: "form"; id: number | null } | null;
+type Sheet = { kind: "days"; id: number } | { kind: "form"; id: number | null } | { kind: "slip"; id: number } | null;
 
 const GROUPS: { type: StaffType; title: string }[] = [
   { type: "fijo", title: "Meseros fijos" },
@@ -27,6 +31,7 @@ const GROUPS: { type: StaffType; title: string }[] = [
 ];
 const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 const firstName = (n: string) => n.split(/\s+/)[0];
+const money = (n: number) => "₡" + Math.round(n).toLocaleString("en-US");
 
 export default function Planilla(props: Props) {
   const { monday, today } = props;
@@ -96,10 +101,13 @@ export default function Planilla(props: Props) {
             <DayTab staff={staff} sched={sched} settings={settings} dates={dates} day={day} setDay={setDay} />
           )}
           {tab === "tips" && (
-            <TipsTab settings={settings} onChange={(s) => {
-              setSettings(s);
-              persist(() => saveSettings(s.open, s.cutoff), "Horario guardado");
-            }} />
+            <TipsTab monday={monday} dates={dates} staff={staff} sched={sched} tickets={props.tickets}
+              settings={settings}
+              onSlip={(id) => setSheet({ kind: "slip", id })}
+              onChange={(s) => {
+                setSettings(s);
+                persist(() => saveSettings(s.open, s.cutoff), "Horario guardado");
+              }} />
           )}
         </main>
       </div>
@@ -130,16 +138,16 @@ export default function Planilla(props: Props) {
           person={sheet.id ? staff.find((x) => x.id === sheet.id) ?? null : null}
           busy={pending}
           onClose={() => setSheet(null)}
-          onSave={(name, type, daysOff) => {
+          onSave={(input) => {
             if (sheet.id) {
               const id = sheet.id;
-              setStaff((s) => s.map((x) => (x.id === id ? { ...x, name, type, daysOff } : x)));
-              persist(() => updateStaff(id, name, type, daysOff), "Datos guardados");
+              setStaff((s) => s.map((x) => (x.id === id ? { ...x, ...input } : x)));
+              persist(() => updateStaff(id, input), "Datos guardados");
               setSheet({ kind: "days", id });
             } else {
               startTransition(async () => {
                 try {
-                  const p = await addStaff(name, type, daysOff);
+                  const p = await addStaff(input);
                   setStaff((s) => [...s, p]);
                   setSched((s) => ({ ...s, [p.id]: dates.map(() => ({ s: "off" })) }));
                   setSheet({ kind: "days", id: p.id });
@@ -157,6 +165,13 @@ export default function Planilla(props: Props) {
           } : undefined}
         />
       )}
+
+      {sheet?.kind === "slip" && (() => {
+        const p = staff.find((x) => x.id === sheet.id);
+        if (!p) return null;
+        return <SlipSheet person={p} monday={monday} dates={dates} staff={staff} sched={sched}
+          tickets={props.tickets} settings={settings} onClose={() => setSheet(null)} />;
+      })()}
 
       {toast && (
         <div className={`toast${toast.err ? " err" : ""}`} role="status">
@@ -291,10 +306,12 @@ function DaysSheet({ person: p, cells, dates, settings, onCell, onWeek, onEditPe
 
 function StaffForm({ person, busy, onSave, onRemove, onClose }: {
   person: Staff | null; busy: boolean;
-  onSave: (name: string, type: StaffType, daysOff: number[]) => void;
+  onSave: (input: StaffInput) => void;
   onRemove?: () => void; onClose: () => void;
 }) {
   const [name, setName] = useState(person?.name ?? "");
+  const [wage, setWage] = useState(String(person?.dailyWage ?? 15000));
+  const [posName, setPosName] = useState(person?.posName ?? "");
   const [type, setType] = useState<StaffType>(person?.type ?? "ocasional");
   const [daysOff, setDaysOff] = useState<number[]>(person?.daysOff ?? []);
   const [confirm, setConfirm] = useState(false);
@@ -303,7 +320,14 @@ function StaffForm({ person, busy, onSave, onRemove, onClose }: {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <form className="sheet" onSubmit={(e) => { e.preventDefault(); if (name.trim()) onSave(name.trim(), type, type === "fijo" ? daysOff : []); }}>
+      <form className="sheet" onSubmit={(e) => {
+        e.preventDefault();
+        if (!name.trim()) return;
+        onSave({
+          name: name.trim(), type, daysOff: type === "fijo" ? daysOff : [],
+          dailyWage: Math.max(0, Math.round(Number(wage) || 0)), posName: posName.trim() || null,
+        });
+      }}>
         <div className="grab" />
         <div className="sheethead">
           <h3>{person ? "Editar persona" : "Agregar persona"}</h3>
@@ -318,6 +342,15 @@ function StaffForm({ person, busy, onSave, onRemove, onClose }: {
           <select id="staff-type" value={type} onChange={(e) => setType(e.target.value as StaffType)}>
             {GROUPS.map((g) => <option key={g.type} value={g.type}>{TYPES[g.type]}</option>)}
           </select>
+        </label>
+        <label className="field">
+          Salario por día trabajado (₡)
+          <input id="staff-wage" inputMode="numeric" value={wage} onChange={(e) => setWage(e.target.value.replace(/\D/g, ""))} />
+        </label>
+        <label className="field">
+          Nombre en el sistema del restaurante
+          <input id="staff-pos" value={posName} maxLength={60} placeholder={name ? firstName(name).toUpperCase() : "Ej. SHAI"} onChange={(e) => setPosName(e.target.value)} />
+          <small className="hint">Solo si en el reporte de ventas aparece distinto a su primer nombre.</small>
         </label>
         {type === "fijo" && (
           <fieldset className="field">
@@ -402,13 +435,117 @@ function DayTab({ staff, sched, settings, dates, day, setDay }: {
   );
 }
 
-function TipsTab({ settings, onChange }: { settings: Settings; onChange: (s: Settings) => void }) {
+function TipsTab({ monday, dates, staff, sched, tickets, settings, onSlip, onChange }: {
+  monday: string; dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>; tickets: Ticket[];
+  settings: Settings; onSlip: (id: number) => void; onChange: (s: Settings) => void;
+}) {
+  const router = useRouter();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, startUpload] = useTransition();
+  const [result, setResult] = useState<ImportResult | null>(null);
+
+  const { days, people } = calcWeek(dates, staff, sched, tickets, settings.cutoff);
+  const warnings = weekWarnings(dates, staff, sched, tickets, settings.cutoff, days);
+  const totalTips = days.reduce((a, d) => a + d.total, 0);
+  const paid = people.filter((p) => p.total > 0);
+  const sum = (k: "salary" | "tip" | "total") => paid.reduce((a, p) => a + p[k], 0);
+  const rounding = Math.round(totalTips - days.reduce((a, d) => a + d.unassigned, 0)) - sum("tip");
+
+  function upload(file: File) {
+    const form = new FormData();
+    form.append("archivo", file);
+    startUpload(async () => {
+      try {
+        const r = await importVentas(form);
+        setResult(r);
+        if (r.ok) router.refresh();
+      } catch {
+        setResult({ ok: false, error: "No se pudo subir. Revise la conexión o vuelva a entrar." });
+      }
+      if (fileRef.current) fileRef.current.value = "";
+    });
+  }
+
   return (
     <>
-      <h2>Reglas de propinas</h2>
+      <h2>Archivo de ventas</h2>
       <div className="rule">
-        <p><b>1. La propina empieza a correr desde la hora en que la persona entró.</b> Quien entró a las 15:00 no recibe de lo facturado antes de las 15:00.</p>
-        <p><b>2. La madrugada pertenece al turno anterior.</b> Lo facturado antes de la hora de corte suma al día que estaba abierto.</p>
+        <p>Exporte <b>Cuentas con propina</b> del sistema de <b>lunes a lunes</b> y súbalo aquí tal como sale. La madrugada del lunes siguiente se suma al domingo. Si lo sube dos veces no se duplica.</p>
+        <input ref={fileRef} id="ventas-file" type="file" accept=".xls,.xlsx" hidden
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); }} />
+        <button className="primary" style={{ marginTop: 4 }} disabled={uploading} onClick={() => fileRef.current?.click()}>
+          {uploading ? "Cargando…" : "Subir archivo de ventas"}
+        </button>
+        {result?.ok === false && <p className="error">{result.error}</p>}
+        {result?.ok && (
+          <p className="okmsg">
+            Listo: {result.total} cuentas del {result.from.slice(8, 10)}/{result.from.slice(5, 7)} al {result.to.slice(8, 10)}/{result.to.slice(5, 7)}
+            {" "}({result.added} nuevas{result.updated ? `, ${result.updated} ya estaban` : ""}), {money(result.tips)} de propina.
+          </p>
+        )}
+      </div>
+
+      <h2>Propina por día</h2>
+      {tickets.length === 0 ? (
+        <div className="empty">Todavía no hay cuentas cargadas para esta semana. Suba el archivo de ventas.</div>
+      ) : (
+        <div className="tbl"><table>
+          <thead><tr><th>Día</th><th className="n">Propina</th><th className="n">Meseros</th><th className="n">c/u</th></tr></thead>
+          <tbody>
+            {days.map((d, i) => {
+              const partial = staff.some((p) => sched[p.id][i].s === "from");
+              return (
+                <tr key={i}>
+                  <td>{DAYS[i]} {dates[i].slice(8).replace(/^0/, "")}</td>
+                  <td className="n">{money(d.total)}</td>
+                  <td className="n">{d.people}</td>
+                  <td className="n">{d.people ? (partial ? "por hora" : money(d.total / d.people)) : "—"}</td>
+                </tr>
+              );
+            })}
+            <tr className="tot"><td>Semana</td><td className="n">{money(totalTips)}</td><td /><td /></tr>
+          </tbody>
+        </table></div>
+      )}
+
+      {warnings.length > 0 && (
+        <>
+          <h2>Para revisar</h2>
+          <div className="warns">
+            {warnings.map((w, i) => <p key={i} className={`warnrow ${w.level}`}>{w.text}</p>)}
+          </div>
+        </>
+      )}
+
+      <h2>Planilla de la semana</h2>
+      {paid.length === 0 ? (
+        <div className="empty">Marque quién trabajó en la pestaña Meseros para ver la planilla.</div>
+      ) : (
+        <>
+          <p className="hint">Toque a una persona para ver su boleta.</p>
+          <div className="tbl"><table>
+            <thead><tr><th>Persona</th><th className="n">Salario</th><th className="n">Propina</th><th className="n">Total</th></tr></thead>
+            <tbody>
+              {paid.map((r) => {
+                const p = staff.find((x) => x.id === r.id)!;
+                return (
+                  <tr key={r.id} className="tap" onClick={() => onSlip(r.id)}>
+                    <td>{p.name}</td><td className="n">{money(r.salary)}</td><td className="n">{money(r.tip)}</td><td className="n"><b>{money(r.total)}</b></td>
+                  </tr>
+                );
+              })}
+              <tr className="tot"><td>Total</td><td className="n">{money(sum("salary"))}</td><td className="n">{money(sum("tip"))}</td><td className="n">{money(sum("total"))}</td></tr>
+            </tbody>
+          </table></div>
+          {rounding !== 0 && <p className="note">Diferencia por redondear al colón: {money(rounding)}.</p>}
+        </>
+      )}
+
+      <h2>Reglas</h2>
+      <div className="rule">
+        <p><b>Propina del día:</b> todo el día más la madrugada siguiente hasta la hora de corte, dividido entre los meseros que trabajaron.</p>
+        <p><b>Quien entró tarde</b> recibe solo de las cuentas facturadas desde su hora de entrada.</p>
+        <p><b>Semana:</b> lunes a domingo (el archivo de lunes a lunes).</p>
         <div className="cfg">
           <label className="field">
             Abre a las
@@ -423,10 +560,62 @@ function TipsTab({ settings, onChange }: { settings: Settings; onChange: (s: Set
             </select>
           </label>
         </div>
+        <p className="note" style={{ margin: 0 }}>Semana del {shortDate(monday)} · el cálculo se actualiza al marcar o cambiar horas.</p>
       </div>
-      <h2>Reparto de propinas</h2>
-      <div className="empty">
-        Próximo paso: subir aquí el archivo de propinas que descarga del sistema. La app lo cruzará con esta planilla y calculará lo de cada persona igual que su Excel.
+    </>
+  );
+}
+
+function SlipSheet({ person: p, monday, dates, staff, sched, tickets, settings, onClose }: {
+  person: Staff; monday: string; dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>;
+  tickets: Ticket[]; settings: Settings; onClose: () => void;
+}) {
+  const r = calcWeek(dates, staff, sched, tickets, settings.cutoff).people.find((x) => x.id === p.id)!;
+  const [copied, setCopied] = useState(false);
+  const worked = r.days.map((d, i) => ({ ...d, i })).filter((d) => sched[p.id][d.i].s !== "off" || d.tip > 0);
+  const text = [
+    `*Planilla ${p.name}*`,
+    `Semana ${shortDate(dates[0])} al ${shortDate(dates[6])}`,
+    "",
+    ...worked.map((d) => `${DAYS[d.i]} ${dates[d.i].slice(8)}: salario ${money(d.salary)} + propina ${money(d.tip)}`),
+    "",
+    `Salario: ${money(r.salary)}`,
+    `Propinas: ${money(r.tip)}`,
+    `*Total a pagar: ${money(r.total)}*`,
+  ].join("\n");
+
+  async function copy() {
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* sin portapapeles */ }
+  }
+
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="sheet" role="dialog" aria-label={`Boleta de ${p.name}`}>
+        <div className="grab" />
+        <div className="sheethead">
+          <span className={`avatar ${p.type}`}>{initials(p.name)}</span>
+          <h3>{p.name}<div className="tag">Semana {shortDate(monday)} – {shortDate(dates[6])}</div></h3>
+          <button className="iconbtn" onClick={onClose} aria-label="Cerrar">✕</button>
+        </div>
+        <div className="tbl"><table>
+          <thead><tr><th>Día</th><th className="n">Salario</th><th className="n">Propina</th></tr></thead>
+          <tbody>
+            {worked.map((d) => {
+              const c = sched[p.id][d.i];
+              return (
+                <tr key={d.i}>
+                  <td>{DAYS[d.i]} {dates[d.i].slice(8).replace(/^0/, "")}{c.s === "from" && <small className="hint"> desde {c.t}</small>}</td>
+                  <td className="n">{money(d.salary)}</td><td className="n">{money(d.tip)}</td>
+                </tr>
+              );
+            })}
+            <tr className="tot"><td>Subtotal</td><td className="n">{money(r.salary)}</td><td className="n">{money(r.tip)}</td></tr>
+          </tbody>
+        </table></div>
+        <div className="grand"><span>Total a pagar</span><b>{money(r.total)}</b></div>
+        <a className="primary linkbtn" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">Enviar por WhatsApp</a>
+        <button className="secondary" onClick={copy}>{copied ? "Copiado" : "Copiar texto"}</button>
       </div>
     </>
   );

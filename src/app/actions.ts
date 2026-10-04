@@ -3,7 +3,9 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { endSession, requireAuth, startSession } from "@/lib/auth";
+import { withSchema } from "@/lib/schema";
 import { HHMM, ISO_DATE, addDays, type Cell, type Staff, type StaffType } from "@/lib/turnos";
+import { parseVentas } from "@/lib/ventas";
 
 const STAFF_TYPES: StaffType[] = ["fijo", "ocasional", "propietario"];
 
@@ -13,12 +15,17 @@ function checkCell(c: Cell) {
   }
 }
 
-function checkStaffInput(name: string, type: StaffType, daysOff: number[]) {
-  const clean = name.trim();
-  if (!clean || clean.length > 60) throw new Error("Escriba un nombre (máximo 60 letras).");
-  if (!STAFF_TYPES.includes(type)) throw new Error("Tipo de persona inválido.");
-  if (!daysOff.every((d) => Number.isInteger(d) && d >= 0 && d <= 6)) throw new Error("Días libres inválidos.");
-  return clean;
+export type StaffInput = Pick<Staff, "name" | "type" | "daysOff" | "dailyWage" | "posName">;
+
+function checkStaffInput(p: StaffInput): StaffInput {
+  const name = p.name.trim();
+  const posName = p.posName?.trim() || null;
+  if (!name || name.length > 60) throw new Error("Escriba un nombre (máximo 60 letras).");
+  if (!STAFF_TYPES.includes(p.type)) throw new Error("Tipo de persona inválido.");
+  if (!p.daysOff.every((d) => Number.isInteger(d) && d >= 0 && d <= 6)) throw new Error("Días libres inválidos.");
+  if (!Number.isInteger(p.dailyWage) || p.dailyWage < 0 || p.dailyWage > 1_000_000) throw new Error("Salario inválido.");
+  if (posName && posName.length > 60) throw new Error("Nombre en el sistema muy largo.");
+  return { ...p, name, posName };
 }
 
 /** Guarda un día de una persona. Libre borra la fila. */
@@ -57,18 +64,63 @@ export async function saveStaffWeek(staffId: number, monday: string, cells: Cell
   );
 }
 
-export async function addStaff(name: string, type: StaffType, daysOff: number[]): Promise<Staff> {
+export async function addStaff(input: StaffInput): Promise<Staff> {
   await requireAuth();
-  const clean = checkStaffInput(name, type, daysOff);
-  const rows = (await db()`insert into staff (name, type, days_off)
-    values (${clean}, ${type}, ${daysOff}) returning id`) as { id: number }[];
-  return { id: rows[0].id, name: clean, type, daysOff };
+  const p = checkStaffInput(input);
+  const rows = (await db()`insert into staff (name, type, days_off, daily_wage, pos_name)
+    values (${p.name}, ${p.type}, ${p.daysOff}, ${p.dailyWage}, ${p.posName}) returning id`) as { id: number }[];
+  return { id: rows[0].id, ...p };
 }
 
-export async function updateStaff(id: number, name: string, type: StaffType, daysOff: number[]) {
+export async function updateStaff(id: number, input: StaffInput) {
   await requireAuth();
-  const clean = checkStaffInput(name, type, daysOff);
-  await db()`update staff set name = ${clean}, type = ${type}, days_off = ${daysOff} where id = ${id}`;
+  const p = checkStaffInput(input);
+  await db()`update staff set name = ${p.name}, type = ${p.type}, days_off = ${p.daysOff},
+    daily_wage = ${p.dailyWage}, pos_name = ${p.posName} where id = ${id}`;
+}
+
+export type ImportResult =
+  | { ok: true; total: number; added: number; updated: number; from: string; to: string; tips: number }
+  | { ok: false; error: string };
+
+/** Carga el archivo "Cuentas con propina" del sistema. Volver a subirlo no duplica: se identifica por folio. */
+export async function importVentas(form: FormData): Promise<ImportResult> {
+  await requireAuth();
+  const file = form.get("archivo");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Escoja el archivo de ventas." };
+  try {
+    const rows = await parseVentas(await file.arrayBuffer());
+    const result = (await withSchema(() => db().query(
+      `insert into tickets (folio, waiter, billed_at, amount, tip_cash, tip_vouchers, tip_other, tip_card,
+                            commission, commission_tax, tip_total)
+       select folio, waiter, billed_at, amount, tip_cash, tip_vouchers, tip_other, tip_card,
+              commission, commission_tax, tip_total
+       from json_to_recordset($1::json) as t(folio bigint, waiter text, billed_at timestamp, amount numeric,
+         tip_cash numeric, tip_vouchers numeric, tip_other numeric, tip_card numeric, commission numeric,
+         commission_tax numeric, tip_total numeric)
+       on conflict (folio) do update set
+         waiter = excluded.waiter, billed_at = excluded.billed_at, amount = excluded.amount,
+         tip_cash = excluded.tip_cash, tip_vouchers = excluded.tip_vouchers, tip_other = excluded.tip_other,
+         tip_card = excluded.tip_card, commission = excluded.commission,
+         commission_tax = excluded.commission_tax, tip_total = excluded.tip_total, imported_at = now()
+       returning (xmax = 0) as inserted`,
+      [JSON.stringify(rows)],
+    ))) as { inserted: boolean }[];
+    const added = result.filter((r) => r.inserted).length;
+    const dates = rows.map((r) => r.billed_at).sort();
+    return {
+      ok: true,
+      total: rows.length,
+      added,
+      updated: rows.length - added,
+      from: dates[0],
+      to: dates[dates.length - 1],
+      tips: rows.reduce((a, r) => a + r.tip_total, 0),
+    };
+  } catch (e) {
+    console.error("importVentas", e);
+    return { ok: false, error: e instanceof Error ? e.message : "No se pudo cargar el archivo." };
+  }
 }
 
 /** Quita a la persona de la lista sin borrar su historial. */

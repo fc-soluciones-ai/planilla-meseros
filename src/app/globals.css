@@ -118,3 +118,23 @@ nav.tabs button.on { color: var(--accent); background: var(--accent-soft) }
   .sheet { animation: up .2s ease-out }
   @keyframes up { from { transform: translateY(30px); opacity: .6 } }
 }
+
+/* propinas y boleta */
+.tbl { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin: 8px 0 }
+.tbl table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 14px }
+.tbl th, .tbl td { padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap }
+.tbl th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600 }
+.tbl .n { text-align: right; font-family: var(--f-mono) }
+.tbl tr:last-child td { border-bottom: 0 }
+.tbl tr.tot td { font-weight: 700; background: var(--bg) }
+.tbl tr.tap { cursor: pointer }
+.tbl tr.tap:active td { background: var(--accent-soft) }
+.warns { display: flex; flex-direction: column; gap: 6px }
+.warnrow { margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 14px; background: var(--part-soft); color: var(--ink) }
+.warnrow.info { background: var(--night-soft) }
+.okmsg { margin: 0; font-size: 14px; color: var(--accent); font-weight: 600 }
+.note { font-size: 12px; color: var(--muted); margin: 6px 0 0 }
+.grand { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 4px 0; font-weight: 600 }
+.grand b { font-family: var(--f-mono); font-size: 22px; color: var(--accent) }
+.linkbtn { text-align: center; text-decoration: none }
+.field small.hint { margin: 0; font-size: 12px }

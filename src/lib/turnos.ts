@@ -3,7 +3,15 @@
 export type Status = "off" | "full" | "from";
 export type Cell = { s: Status; t?: string };
 export type StaffType = "fijo" | "ocasional" | "propietario";
-export type Staff = { id: number; name: string; type: StaffType; daysOff: number[] };
+export type Staff = {
+  id: number;
+  name: string;
+  type: StaffType;
+  daysOff: number[];
+  dailyWage: number;
+  /** Nombre con que aparece en el sistema del restaurante, si es distinto (ej. "SHAI"). */
+  posName: string | null;
+};
 export type Settings = { open: string; cutoff: string };
 
 export const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
