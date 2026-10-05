@@ -12,7 +12,10 @@ export type DayCalc = {
   unassigned: number; // propina facturada a una hora en que no había nadie marcado
   first: { time: string; nextDay: boolean } | null; // primera cuenta del turno
   last: { time: string; nextDay: boolean } | null;  // última cuenta (puede ser de la madrugada siguiente)
+  /** Tramos del día cuando alguien entró tarde: desde qué hora, cuántos meseros y cuánta propina. */
+  segments: DaySegment[];
 };
+export type DaySegment = { from: string | null; until: string | null; people: number; tip: number };
 export type PersonCalc = {
   id: number;
   days: { salary: number; tip: number }[];
@@ -36,11 +39,29 @@ export function calcWeek(
 ) {
   const team = staff.filter(sharesTips);
   const days: DayCalc[] = dates.map((_, d) => ({
-    total: 0, sales: 0, tickets: 0, unassigned: 0, first: null, last: null,
+    total: 0, sales: 0, tickets: 0, unassigned: 0, first: null, last: null, segments: [],
     people: team.filter((p) => sched[p.id]?.[d]?.s !== "off").length,
   }));
   const exact: Record<number, number[]> = {};
   for (const p of team) exact[p.id] = dates.map(() => 0);
+
+  // Horas de entrada de quienes no hicieron el día completo: cada una abre un tramo nuevo
+  const starts = dates.map((_, d) =>
+    [...new Set(team.map((p) => sched[p.id]?.[d]).filter((c) => c?.s === "from").map((c) => c!.t!))]
+      .sort((a, b) => opMin(a, cutoff) - opMin(b, cutoff)));
+  starts.forEach((times, d) => {
+    if (!times.length) return;
+    const bounds: (string | null)[] = [null, ...times];
+    days[d].segments = bounds.map((from, i) => ({
+      from,
+      until: times[i] ?? null,
+      people: team.filter((p) => {
+        const c = sched[p.id]?.[d];
+        return c && (from === null ? c.s === "full" : isPresent(c, from, cutoff));
+      }).length,
+      tip: 0,
+    }));
+  });
 
   for (const t of tickets) {
     const d = dates.indexOf(turnDate(t.date, t.time, cutoff));
@@ -52,6 +73,10 @@ export function calcWeek(
     const mark = { time: t.time, nextDay: m >= 1440 };
     if (!days[d].first || m < opMin(days[d].first!.time, cutoff)) days[d].first = mark;
     if (!days[d].last || m > opMin(days[d].last!.time, cutoff)) days[d].last = mark;
+    if (days[d].segments.length) {
+      const k = starts[d].filter((s) => opMin(s, cutoff) <= m).length;
+      days[d].segments[k].tip += t.tip;
+    }
     const present = team.filter((p) => sched[p.id] && isPresent(sched[p.id][d], t.time, cutoff));
     if (!present.length) { days[d].unassigned += t.tip; continue; }
     for (const p of present) exact[p.id][d] += t.tip / present.length;

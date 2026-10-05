@@ -504,6 +504,19 @@ function TipsTab({ monday, restaurant, dates, staff, sched, tickets, settings, o
                       : "Sin facturas"}
                   </td>
                 </tr>
+                {d.segments.length > 0 && (
+                  <tr className="dhours dseg">
+                    <td colSpan={5}>
+                      {d.segments.map((g, k) => (
+                        <span key={k}>
+                          {g.from === null ? `Antes de las ${g.until}` : g.until ? `De ${g.from} a ${g.until}` : `Desde las ${g.from}`}
+                          {": "}{g.people} {g.people === 1 ? "mesero" : "meseros"}
+                          {g.people > 0 && <> · ₡{num(g.tip)} → <b>₡{num(g.tip / g.people)} c/u</b></>}
+                        </span>
+                      ))}
+                    </td>
+                  </tr>
+                )}
               </Fragment>
               );
             })}
