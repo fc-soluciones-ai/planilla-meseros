@@ -85,6 +85,12 @@ export function isPresent(cell: Cell, time: string, cutoff: string): boolean {
   return false;
 }
 
+/** Hora en formato de 12 horas: "15:00" → "3:00 p. m." */
+export function ampm(t: string): string {
+  const [h, m] = t.split(":").map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "a. m." : "p. m."}`;
+}
+
 /** Fecha de hoy en la zona horaria del restaurante. */
 export function todayIn(tz: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());

@@ -3,7 +3,7 @@ import { db } from "./db";
 // Esquema de la base. Se aplica en una base nueva o cuando schema_version es de una versión anterior.
 // En shifts, un día sin fila toma el valor por defecto: los fijos trabajan todo menos sus días libres.
 // Una fila con status 'off' es un libre marcado a mano.
-export const SCHEMA_VERSION = "4";
+export const SCHEMA_VERSION = "5";
 
 const STATEMENTS = [
   `create table if not exists staff (
@@ -57,8 +57,12 @@ const STATEMENTS = [
     password_hash  text not null,                   -- scrypt$sal$hash
     created_at     timestamptz not null default now()
   )`,
-  `insert into settings (key, value) values ('open', '07:00'), ('cutoff', '05:00')
+  `insert into settings (key, value) values ('open', '11:00'), ('cutoff', '05:00')
    on conflict (key) do nothing`,
+  // v5: el día completo empieza a las 11:00 (una sola vez; si luego se cambia en Configuración, se respeta)
+  `update settings set value = '11:00' where key = 'open' and value = '07:00'
+     and not exists (select 1 from settings where key = 'open_v5')`,
+  `insert into settings (key, value) values ('open_v5', '1') on conflict (key) do nothing`,
 ];
 
 export async function ensureSchema() {

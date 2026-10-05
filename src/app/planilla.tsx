@@ -7,7 +7,7 @@ import InstallButton from "./install-button";
 import { calcWeek, weekWarnings, type PersonCalc, type Ticket } from "@/lib/reparto";
 import { shareFiles, slipImage, type SlipData } from "@/lib/boleta";
 import {
-  DAYS, DLONG, TYPES, addDays, fmt, shortDate, toMin, weekDates,
+  DAYS, DLONG, TYPES, addDays, ampm, fmt, shortDate, toMin, weekDates,
   type Cell, type Settings, type Staff, type StaffType,
 } from "@/lib/turnos";
 import {
@@ -42,7 +42,9 @@ const num = (n: number) => Math.round(n).toLocaleString("en-US");
 const money = (n: number) => "₡" + num(n);
 
 /** Datos de la boleta de una persona para la semana. */
-function slipData(p: Staff, r: PersonCalc, dates: string[], sched: Record<number, Cell[]>, restaurant: string): SlipData {
+function slipData(
+  p: Staff, r: PersonCalc, dates: string[], sched: Record<number, Cell[]>, restaurant: string, restaurantOpen: string,
+): SlipData {
   return {
     restaurant: restaurant || "Planilla de meseros",
     name: p.name,
@@ -52,7 +54,8 @@ function slipData(p: Staff, r: PersonCalc, dates: string[], sched: Record<number
       const c = sched[p.id][i];
       return {
         day: `${DAYS[i]} ${dates[i].slice(8).replace(/^0/, "")}`,
-        note: c.s === "from" ? `desde ${c.t}` : undefined,
+        // Hora de entrada: la marcada, o la del día completo
+        note: c.s === "from" ? `entrada ${ampm(c.t!)}` : c.s === "full" ? `entrada ${ampm(restaurantOpen)}` : undefined,
         off: c.s === "off" && d.salary === 0 && d.tip === 0,
         salary: d.salary,
         tip: d.tip,
@@ -345,7 +348,8 @@ function StaffTab({ staff, sched, dates, today, settings, onCell, onGoConfig }: 
 
 function hourOptions(open: string, current?: string) {
   const out: string[] = [];
-  for (let m = toMin(open); m <= toMin("23:30"); m += 30) out.push(fmt(m));
+  // desde temprano, por si un refuerzo entra antes de la hora del día completo
+  for (let m = Math.min(toMin(open), toMin("07:00")); m <= toMin("23:30"); m += 30) out.push(fmt(m));
   if (current && !out.includes(current)) out.push(current);
   return out.sort();
 }
@@ -568,7 +572,7 @@ function TipsTab({ monday, restaurant, dates, staff, sched, tickets, settings, o
           <button className="secondary" disabled={sharing} onClick={async () => {
             setSharing(true); setShareMsg(null);
             try {
-              const files = await Promise.all(paid.map((r) => slipImage(slipData(staff.find((x) => x.id === r.id)!, r, dates, sched, restaurant))));
+              const files = await Promise.all(paid.map((r) => slipImage(slipData(staff.find((x) => x.id === r.id)!, r, dates, sched, restaurant, settings.open))));
               const res = await shareFiles(files, `Boletas semana ${shortDate(dates[0])}`);
               if (res === "downloaded") setShareMsg("Este navegador no permite compartir: las boletas se descargaron como imágenes.");
             } catch {
@@ -600,7 +604,7 @@ function SlipSheet({ id, dates, staff, sched, tickets, settings, restaurant, onN
   const [preview, setPreview] = useState<{ id: number; file: File; url: string } | null>(null);
   const [sharing, setSharing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  const data = p && r ? slipData(p, r, dates, sched, restaurant) : null;
+  const data = p && r ? slipData(p, r, dates, sched, restaurant, settings.open) : null;
   const key = data ? JSON.stringify(data) : "";
 
   // Genera la imagen de la boleta que se está viendo
@@ -625,7 +629,7 @@ function SlipSheet({ id, dates, staff, sched, tickets, settings, restaurant, onN
     `*Planilla ${p.name}*`,
     data.week,
     "",
-    ...data.rows.map((d) => (d.off ? `${d.day}: Libre` : `${d.day}: salario ${money(d.salary)} + propina ${money(d.tip)}`)),
+    ...data.rows.map((d) => (d.off ? `${d.day}: Libre` : `${d.day} (${d.note ?? ""}): salario ${money(d.salary)} + propina ${money(d.tip)}`)),
     "",
     `Salario: ${money(r.salary)}`,
     `Propinas: ${money(r.tip)}`,
@@ -788,9 +792,9 @@ function ConfigTab({ users, me, staff, settings, onEdit, onAdd, onSettings, onRe
         <p>La propina de cada día incluye la madrugada siguiente hasta la hora de corte.</p>
         <div className="cfg">
           <label className="field">
-            Abre a las
+            Entrada día completo
             <select id="cfg-open" value={settings.open} onChange={(e) => onSettings({ ...settings, open: e.target.value })}>
-              {["06:00", "07:00", "08:00", "09:00", "10:00", "11:00", "12:00"].map((v) => <option key={v}>{v}</option>)}
+              {["07:00", "08:00", "09:00", "10:00", "10:30", "11:00", "11:30", "12:00"].map((v) => <option key={v}>{v}</option>)}
             </select>
           </label>
           <label className="field">

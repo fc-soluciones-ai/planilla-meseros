@@ -19,7 +19,7 @@ async function queryWeek(monday: string) {
   const s = Object.fromEntries(settingRows.map((r) => [r.key, r.value]));
   if (s.schema_version !== SCHEMA_VERSION) await ensureSchema(); // base de una versión anterior
   const settings: Settings = {
-    open: s.open ?? "07:00",
+    open: s.open ?? "11:00",
     cutoff: s.cutoff ?? "05:00",
     restaurant: s.restaurant ?? "",
   };
