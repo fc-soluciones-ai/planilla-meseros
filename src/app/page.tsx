@@ -17,7 +17,7 @@ export default async function Page({ searchParams }: PageProps<"/">) {
   });
   if (!session) redirect("/login");
 
-  const { semana } = await searchParams;
+  const { semana, vista } = await searchParams;
   const today = todayIn(process.env.RESTAURANT_TZ || "America/Costa_Rica");
   const monday = mondayOf(typeof semana === "string" && ISO_DATE.test(semana) ? semana : today);
 
@@ -32,5 +32,6 @@ export default async function Page({ searchParams }: PageProps<"/">) {
 
   // La clave cambia si cambian las personas o sus días libres: la pantalla se rearma con los días por defecto nuevos
   const key = `${monday}|${data.staff.map((p) => `${p.id}:${p.type}:${p.daysOff.join("")}`).join(",")}`;
-  return <Planilla key={key} monday={monday} today={today} {...data} users={users} me={session} />;
+  const tab = vista === "propinas" ? "tips" : vista === "config" ? "config" : "staff";
+  return <Planilla key={key} monday={monday} today={today} initialTab={tab} {...data} users={users} me={session} />;
 }

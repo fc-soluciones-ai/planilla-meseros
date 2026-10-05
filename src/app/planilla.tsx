@@ -26,6 +26,7 @@ type Props = {
   tickets: Ticket[];
   users: AppUser[];
   me: Session;
+  initialTab?: Tab;
 };
 type Tab = "staff" | "tips" | "config";
 type Sheet = { kind: "form"; id: number | null } | { kind: "slip"; id: number } | null;
@@ -69,7 +70,16 @@ export default function Planilla(props: Props) {
   const [staff, setStaff] = useState(props.staff);
   const [sched, setSched] = useState(props.sched);
   const [settings, setSettings] = useState(props.settings);
-  const [tab, setTab] = useState<Tab>("staff");
+  const [tab, setTab] = useState<Tab>(props.initialTab ?? "staff");
+  const vista = tab === "tips" ? "propinas" : tab === "config" ? "config" : "";
+  const weekHref = (w: string) => `/?semana=${w}${vista ? `&vista=${vista}` : ""}`;
+
+  // La pestaña queda en la dirección: al recargar o al cambiar de semana se mantiene
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (vista) url.searchParams.set("vista", vista); else url.searchParams.delete("vista");
+    window.history.replaceState(null, "", url.pathname + url.search);
+  }, [vista]);
   const [sheet, setSheet] = useState<Sheet>(null);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -113,12 +123,12 @@ export default function Planilla(props: Props) {
           </div>
           {tab !== "config" && (
             <div className="weeknav">
-              <Link className="iconbtn" href={`/?semana=${addDays(monday, -7)}`} aria-label="Semana anterior">‹</Link>
+              <Link className="iconbtn" href={weekHref(addDays(monday, -7))} aria-label="Semana anterior">‹</Link>
               <div className="lbl">
                 <span>Semana {shortDate(a).split(" ")[0]} – {shortDate(b)} {b.slice(0, 4)}</span>
-                {!thisWeek && <Link href="/">Ir a esta semana</Link>}
+                {!thisWeek && <Link href={vista ? `/?vista=${vista}` : "/"}>Ir a esta semana</Link>}
               </div>
-              <Link className="iconbtn" href={`/?semana=${addDays(monday, 7)}`} aria-label="Semana siguiente">›</Link>
+              <Link className="iconbtn" href={weekHref(addDays(monday, 7))} aria-label="Semana siguiente">›</Link>
             </div>
           )}
           <InstallButton />
@@ -131,7 +141,7 @@ export default function Planilla(props: Props) {
               onGoConfig={() => setTab("config")} />
           )}
           {tab === "tips" && (
-            <TipsTab restaurant={settings.restaurant || props.settings.restaurant} dates={dates} staff={staff} sched={sched} tickets={props.tickets}
+            <TipsTab monday={monday} restaurant={settings.restaurant || props.settings.restaurant} dates={dates} staff={staff} sched={sched} tickets={props.tickets}
               settings={settings}
               onSlip={(id) => setSheet({ kind: "slip", id })}
  />
@@ -401,8 +411,8 @@ function StaffForm({ person, busy, onSave, onRemove, onClose }: {
   );
 }
 
-function TipsTab({ restaurant, dates, staff, sched, tickets, settings, onSlip }: {
-  restaurant: string; dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>; tickets: Ticket[];
+function TipsTab({ monday, restaurant, dates, staff, sched, tickets, settings, onSlip }: {
+  monday: string; restaurant: string; dates: string[]; staff: Staff[]; sched: Record<number, Cell[]>; tickets: Ticket[];
   settings: Settings; onSlip: (id: number) => void;
 }) {
   const [sharing, setSharing] = useState(false);
@@ -411,6 +421,7 @@ function TipsTab({ restaurant, dates, staff, sched, tickets, settings, onSlip }:
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, startUpload] = useTransition();
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [file, setFile] = useState<File | null>(null);
 
   const { days, people } = calcWeek(dates, staff, sched, tickets, settings.cutoff);
   const warnings = weekWarnings(days);
@@ -419,18 +430,25 @@ function TipsTab({ restaurant, dates, staff, sched, tickets, settings, onSlip }:
   const sum = (k: "salary" | "tip" | "total") => paid.reduce((a, p) => a + p[k], 0);
   const rounding = Math.round(totalTips - days.reduce((a, d) => a + d.unassigned, 0)) - sum("tip");
 
-  function upload(file: File) {
+  function process() {
+    if (!file) return;
     const form = new FormData();
     form.append("archivo", file);
+    setResult(null);
     startUpload(async () => {
       try {
         const r = await importVentas(form);
         setResult(r);
-        if (r.ok) router.refresh();
+        if (r.ok) {
+          setFile(null);
+          if (fileRef.current) fileRef.current.value = "";
+          // Lleva a la semana del archivo, en esta misma pestaña
+          if (r.week !== monday) router.push(`/?semana=${r.week}&vista=propinas`);
+          else router.refresh();
+        }
       } catch {
-        setResult({ ok: false, error: "No se pudo subir. Revise la conexión o vuelva a entrar." });
+        setResult({ ok: false, error: "No se pudo procesar. Revise la conexión o vuelva a entrar." });
       }
-      if (fileRef.current) fileRef.current.value = "";
     });
   }
 
@@ -439,23 +457,28 @@ function TipsTab({ restaurant, dates, staff, sched, tickets, settings, onSlip }:
       <h2>Archivo de ventas</h2>
       <div className="rule">
         <p>Exporte <b>Cuentas con propina</b> del sistema de <b>lunes a lunes</b> y súbalo aquí tal como sale. La madrugada del lunes siguiente se suma al domingo. Si lo sube dos veces no se duplica.</p>
-        <input ref={fileRef} id="ventas-file" type="file" accept=".xls,.xlsx" hidden
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); }} />
-        <button className="primary" style={{ marginTop: 4 }} disabled={uploading} onClick={() => fileRef.current?.click()}>
-          {uploading ? "Cargando…" : "Subir archivo de ventas"}
+        <input ref={fileRef} id="ventas-file" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden
+          onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }} />
+        <button className="secondary" style={{ marginTop: 4 }} disabled={uploading} onClick={() => fileRef.current?.click()}>
+          {file ? "Cambiar archivo" : "1. Escoger archivo"}
+        </button>
+        {file && <p className="filepick">📄 {file.name} <small>({Math.max(1, Math.round(file.size / 1024))} KB)</small></p>}
+        <button className="primary" disabled={!file || uploading} onClick={process}>
+          {uploading ? "Procesando…" : "2. Procesar archivo"}
         </button>
         {result?.ok === false && <p className="error">{result.error}</p>}
         {result?.ok && (
           <p className="okmsg">
             Listo: {result.total} cuentas del {result.from.slice(8, 10)}/{result.from.slice(5, 7)} al {result.to.slice(8, 10)}/{result.to.slice(5, 7)}
             {" "}({result.added} nuevas{result.updated ? `, ${result.updated} ya estaban` : ""}), {money(result.tips)} de propina.
+            {result.week !== monday ? " Mostrando la semana del archivo…" : ""}
           </p>
         )}
       </div>
 
       <h2>Propina por día</h2>
       {tickets.length === 0 ? (
-        <div className="empty">Todavía no hay cuentas cargadas para esta semana. Suba el archivo de ventas.</div>
+        <div className="empty">No hay cuentas cargadas para esta semana ({shortDate(dates[0])} al {shortDate(dates[6])}). Escoja el archivo y toque Procesar. Si ya lo procesó, cambie de semana con las flechas de arriba.</div>
       ) : (
         <div className="tbl days"><table>
           <thead>

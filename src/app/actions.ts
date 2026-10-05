@@ -59,7 +59,7 @@ export async function updateStaff(id: number, input: StaffInput) {
  * Al cargar las ventas, las semanas completas del archivo quedan fijas: los días que seguían por defecto
  * se guardan. Así, si después cambian los días libres de alguien, la planilla ya pagada no se mueve.
  */
-async function freezeDefaults(firstBilled: string, lastBilled: string) {
+async function freezeDefaults(firstBilled: string, lastBilled: string): Promise<string> {
   const sql = db();
   const [{ cutoff }] = (await sql`select coalesce((select value from settings where key = 'cutoff'), '05:00') as cutoff`) as { cutoff: string }[];
   const first = turnDate(firstBilled.slice(0, 10), firstBilled.slice(11, 16), cutoff);
@@ -67,16 +67,17 @@ async function freezeDefaults(firstBilled: string, lastBilled: string) {
   // Primera semana que empieza dentro del archivo y última que termina dentro del archivo
   const from = mondayOf(first) === first ? first : addDays(mondayOf(first), 7);
   const to = addDays(mondayOf(addDays(last, 1)), -1);
-  if (from > to) return;
+  if (from > to) return cutoff;
   await sql`insert into shifts (staff_id, work_date, status)
     select s.id, d::date, case when (extract(isodow from d)::int - 1) = any(s.days_off) then 'off' else 'full' end
     from staff s cross join generate_series(${from}::date, ${to}::date, interval '1 day') d
     where s.active and s.type = 'fijo'
     on conflict (staff_id, work_date) do nothing`;
+  return cutoff;
 }
 
 export type ImportResult =
-  | { ok: true; total: number; added: number; updated: number; from: string; to: string; tips: number }
+  | { ok: true; total: number; added: number; updated: number; from: string; to: string; tips: number; week: string }
   | { ok: false; error: string };
 
 /** Carga el archivo "Cuentas con propina" del sistema. Volver a subirlo no duplica: se identifica por folio. */
@@ -108,7 +109,14 @@ export async function importVentas(form: FormData): Promise<ImportResult> {
     ))) as { inserted: boolean }[];
     const added = result.filter((r) => r.inserted).length;
     const dates = rows.map((r) => r.billed_at).sort();
-    await freezeDefaults(dates[0], dates[dates.length - 1]);
+    const cutoff = await freezeDefaults(dates[0], dates[dates.length - 1]);
+    // Semana con más cuentas del archivo: ahí se lleva la pantalla al terminar
+    const perWeek = new Map<string, number>();
+    for (const r of rows) {
+      const w = mondayOf(turnDate(r.billed_at.slice(0, 10), r.billed_at.slice(11, 16), cutoff));
+      perWeek.set(w, (perWeek.get(w) ?? 0) + 1);
+    }
+    const week = [...perWeek.entries()].sort((a, b) => b[1] - a[1])[0][0];
     return {
       ok: true,
       total: rows.length,
@@ -117,6 +125,7 @@ export async function importVentas(form: FormData): Promise<ImportResult> {
       from: dates[0],
       to: dates[dates.length - 1],
       tips: rows.reduce((a, r) => a + r.tip_total, 0),
+      week,
     };
   } catch (e) {
     console.error("importVentas", e);
