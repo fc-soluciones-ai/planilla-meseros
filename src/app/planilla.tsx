@@ -482,33 +482,40 @@ function TipsTab({ monday, restaurant, dates, staff, sched, tickets, settings, o
       ) : (
         <div className="tbl days"><table>
           <thead>
-            <tr><th>Día</th><th className="n">Cuentas</th><th className="n">Meseros</th><th className="n">Propina ₡</th><th className="n">Ventas ₡</th></tr>
+            <tr><th>Día</th><th className="n">Cuentas</th><th className="n">Meseros</th><th className="n">Propina ₡</th><th className="n">Por mesero ₡</th></tr>
           </thead>
           <tbody>
-            {days.map((d, i) => (
+            {days.map((d, i) => {
+              // Si alguien entró tarde, el reparto es por hora y cada uno recibe distinto
+              const partial = staff.some((p) => p.type !== "propietario" && sched[p.id][i].s === "from");
+              return (
               <Fragment key={i}>
                 <tr className="dmain">
                   <td><b>{DAYS[i]} {dates[i].slice(8).replace(/^0/, "")}</b></td>
                   <td className="n">{d.tickets}</td>
                   <td className="n">{d.people}</td>
                   <td className="n">{num(d.total)}</td>
-                  <td className="n">{num(d.sales)}</td>
+                  <td className="n">{d.people ? (partial ? "por hora" : num(d.total / d.people)) : "—"}</td>
                 </tr>
                 <tr className="dhours">
                   <td colSpan={5}>
                     {d.first && d.last
-                      ? <>Primera factura {d.first.time} · Última {d.last.time}{d.last.nextDay ? ` del ${DLONG[(i + 1) % 7]}` : ""}</>
+                      ? <>Ventas ₡{num(d.sales)} · Primera factura {d.first.time} · Última {d.last.time}{d.last.nextDay ? ` del ${DLONG[(i + 1) % 7]}` : ""}</>
                       : "Sin facturas"}
                   </td>
                 </tr>
               </Fragment>
-            ))}
+              );
+            })}
             <tr className="tot">
               <td>Semana</td>
               <td className="n">{days.reduce((a, d) => a + d.tickets, 0)}</td>
               <td />
               <td className="n">{num(totalTips)}</td>
-              <td className="n">{num(days.reduce((a, d) => a + d.sales, 0))}</td>
+              <td />
+            </tr>
+            <tr className="dhours tot">
+              <td colSpan={5}>Ventas de la semana ₡{num(days.reduce((a, d) => a + d.sales, 0))}</td>
             </tr>
           </tbody>
         </table></div>
