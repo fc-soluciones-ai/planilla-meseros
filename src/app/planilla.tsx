@@ -123,6 +123,12 @@ export default function Planilla(props: Props) {
               <img src="/logo.svg" alt="D'charly's" width={52} height={44} />
               <h1>Planilla de meseros</h1>
             </span>
+            <form action={logout}>
+              <button className="logout" aria-label={`Cerrar sesión de ${props.me.name}`}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11" /></svg>
+                Salir
+              </button>
+            </form>
           </div>
           {tab !== "config" && (
             <div className="weeknav">
